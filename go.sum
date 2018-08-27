@@ -1,0 +1,12 @@
+github.com/alecthomas/participle v0.0.0-20180801095730-433a43f4119e h1:89DEYj+TUoEgie6JmwSF0YNnxnDCTbQinDoGG5iSd0g=
+github.com/alecthomas/participle v0.0.0-20180801095730-433a43f4119e/go.mod h1:UkaznBMzS/FVetZ0dhhxVOiSBDgfLmIYp249zU1w/Z0=
+github.com/alecthomas/repr v0.0.0-20180818092828-117648cd9897 h1:p9Sln00KOTlrYkxI1zYWl1QLnEqAqEARBEYa8FQnQcY=
+github.com/alecthomas/repr v0.0.0-20180818092828-117648cd9897/go.mod h1:xTS7Pm1pD1mvyM075QCDSRqH6qRLXylzS24ZTpRiSzQ=
+github.com/gorilla/websocket v1.3.0 h1:r/LXc0VJIMd0rCMsc6DxgczaQtoCwCLatnfXmSYcXx8=
+github.com/gorilla/websocket v1.3.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
+github.com/julienschmidt/httprouter v0.0.0-20180715161854-348b672cd90d h1:of6+TpypLAaiv4JxgH5aplBZnt0b65B4v4c8q5oy+Sk=
+github.com/julienschmidt/httprouter v0.0.0-20180715161854-348b672cd90d/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
+github.com/unrolled/render v0.0.0-20180807193321-4206df6ff701 h1:BJ/T25enw0WcbWqV132hGXRQdqCqe9XBzqh4AWVH7Bc=
+github.com/unrolled/render v0.0.0-20180807193321-4206df6ff701/go.mod h1:tu82oB5W2ykJRVioYsB+IQKcft7ryBr7w12qMBUPyXg=
+golang.org/x/exp v0.0.0-20180807140117-3d87b88a115f h1:9kQ594xxPWRNKfTOnPjPcgrIJ19zM3ic57aI7PbMyAA=
+golang.org/x/exp v0.0.0-20180807140117-3d87b88a115f/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
