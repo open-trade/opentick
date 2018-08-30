@@ -1,16 +1,17 @@
-package opentick_test
+package opentick
 
 import (
 	"github.com/alecthomas/repr"
-	"github.com/opentradesolutions/opentick"
 	"testing"
 )
 
+var sqlStmt = "select * from test where a > 1.2 and (b < 2 - 1) and b in (1,2) limit -2"
+
 func Test_Parse(t *testing.T) {
-	expr, err := opentick.Parse("select * from test")
+	expr, err := Parse(sqlStmt)
 	repr.Println(expr, repr.Indent("  "), repr.OmitEmpty(true))
 	if err != nil {
-		t.Error("invalid select")
+		t.Error(err)
 	}
 }
 
@@ -22,6 +23,9 @@ func Benchmark_Parse(b *testing.B) {
 
 	b.StartTimer()             //重新开始时间
 	for i := 0; i < b.N; i++ { //use b.N for looping
-		opentick.Parse("select * from test")
+		_, err := Parse(sqlStmt)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
