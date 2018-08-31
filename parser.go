@@ -7,95 +7,127 @@ import (
 
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
-		`|(?P<Keyword>(?i)SELECT|FROM|WHERE|LIMIT|AND|OR|IN|TABLE|INSERT|VALUES|INTO|CREATE|DELETE|ALTER|TYPE|ADD|DROP|RENAME|TRUE|FALSE)` +
+		`|(?P<Keyword>(?i)TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT|OR|IN)` +
 		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d*\.?\d+([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
 		`|(?P<Operators><>|!=|<=|>=|[-+*/%,.()=<>?])`,
 	))
 	sqlParser = participle.MustBuild(
-		&Select{},
+		&Ast{},
 		participle.Lexer(sqlLexer),
 		participle.Unquote(sqlLexer, "String"),
 		participle.Upper(sqlLexer, "Keyword"),
 	)
 )
 
-type Boolean bool
+type AstBoolean bool
 
-func (b *Boolean) Capture(values []string) error {
+func (b *AstBoolean) Capture(values []string) error {
 	*b = values[0] == "TRUE"
 	return nil
 }
 
-// Select based on http://www.h2database.com/html/grammar.html
-type Select struct {
-	Selected *SelectExpression `"SELECT" @@`
-	From     *string           `"FROM" @Ident`
-	Where    *Expression       `[ "WHERE" @@ ]`
-	Limit    *int64            `[ "LIMIT" @Number ]`
+type Ast struct {
+	Select *AstSelect `"SELECT" @@`
+	Insert *AstInsert `| "INSERT" @@`
+	Create *AstCreate `| "CREATE" @@`
+	Drop   *AstDrop   `| "DROP" @@`
 }
 
-type SelectExpression struct {
-	All    *string   `@"*"`
-	Fields []*string `| @Ident { "," @Ident }`
+type AstDrop struct {
+	Table    *AstTableName `"TABLE" @@`
+	Database *string       `| "DATABASE" @Ident`
 }
 
-type Expression struct {
-	Or []*AndCondition `@@ { "OR" @@ }`
+type AstCreate struct {
+	Table    *AstCreateTable `"TABLE" @@`
+	Database *string         `| "DATABASE" @Ident`
 }
 
-type AndCondition struct {
-	And []*ConditionOperand `@@ { "AND" @@ }`
+type AstCreateTable struct {
+	Name   *AstTableName `@@`
+	Fields []AstTypeDef  `"(" @@ {"," @@} ")"`
 }
 
-type ConditionOperand struct {
-	Operand      *Operand      `@@`
-	ConditionRHS *ConditionRHS `[ @@ ]`
+type AstTypeDef struct {
+	Key  []string `"PRIMARY" "KEY" "(" @Ident {"," @Ident} ")"`
+	Name *string  `| @Ident`
+	Type *string  `@{"BIGINT" | "TINYINT" | "SMALLINT" | "INT"  | "DOUBLE" | "FLOAT" | "TIMESTAMP" | "BOOLEAN" | "TEXT"}`
 }
 
-type ConditionRHS struct {
-	Compare *Compare   `  @@`
-	In      []*Operand `| "IN" "(" @@ { "," @@ } ")"`
+type AstInsert struct {
+	Table  *AstTableName `"INTO" @@`
+	Fields []string      `"(" @Ident {"," @Ident} ")"`
+	Values []AstValue    `"VALUES" "(" @@ {"," @@} ")"`
 }
 
-type Compare struct {
-	Operator *string  `@( "<>" | "<=" | ">=" | "=" | "<" | ">" | "!=" )`
-	RHS      *Operand `@@`
+type AstTableName struct {
+	A *string `@Ident`
+	B *string `["." @Ident]`
 }
 
-type Operand struct {
-	Summand []*Summand `@@ { "|" "|" @@ }`
+type AstSelect struct {
+	Selected *AstSelectExpression `@@`
+	From     *AstTableName        `"FROM" @@`
+	Where    *AstExpression       `["WHERE" @@]`
+	Limit    *int64               `["LIMIT" @Number]`
 }
 
-type Summand struct {
-	LHS *Factor `@@`
-	Op  *string `[ @("+" | "-")`
-	RHS *Factor `@@ ]`
+type AstSelectExpression struct {
+	All    *string  `@"*"`
+	Fields []string `| @Ident {"," @Ident}`
 }
 
-type Factor struct {
-	LHS *Term   `@@`
-	Op  *string `[ @("*" | "/" | "%")`
-	RHS *Term   `@@ ]`
+type AstExpression struct {
+	Or []AstAndCondition `@@ {"OR" @@}`
 }
 
-type Term struct {
-	Symbol        *string     `@Ident @{ "." Ident }`
-	Value         *Value      `| @@`
-	SubExpression *Expression `| "(" @@ ")"`
+type AstAndCondition struct {
+	And []AstConditionOperand `@@ {"AND" @@}`
 }
 
-type Value struct {
-	Wildcard *string  `@"*"`
-	Number   *float64 `| @Number`
-	String   *string  `| @String`
-	Boolean  *Boolean `| @("TRUE" | "FALSE")`
-	Null     *string  `| @"NULL"`
+type AstConditionOperand struct {
+	LHS          *AstTerm         `@@`
+	ConditionRHS *AstConditionRHS `[@@]`
 }
 
-func Parse(sql string) (*Select, error) {
-	expr := &Select{}
+type AstConditionRHS struct {
+	Compare *AstCompare `@@`
+	In      []AstTerm   `| "IN" "(" @@ {"," @@} ")"`
+}
+
+type AstCompare struct {
+	Operator *string     `@("<>" | "<=" | ">=" | "=" | "<" | ">" | "!=")`
+	RHS      *AstSummand `@@`
+}
+
+type AstSummand struct {
+	LHS *AstFactor `@@`
+	Op  *string    `[@("+" | "-")`
+	RHS *AstFactor `@@]`
+}
+
+type AstFactor struct {
+	LHS *AstTerm `@@`
+	Op  *string  `[@("*" | "/" | "%")`
+	RHS *AstTerm `@@]`
+}
+
+type AstTerm struct {
+	Symbol        *string        `@Ident`
+	Value         *AstValue      `| @@`
+	SubExpression *AstExpression `| "(" @@ ")"`
+}
+
+type AstValue struct {
+	Number  *float64    `@Number`
+	String  *string     `| @String`
+	Boolean *AstBoolean `| @("TRUE" | "FALSE")`
+}
+
+func Parse(sql string) (*Ast, error) {
+	expr := &Ast{}
 	err := sqlParser.ParseString(sql, expr)
 	return expr, err
 }

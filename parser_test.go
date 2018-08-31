@@ -5,7 +5,11 @@ import (
 	"testing"
 )
 
-var sqlStmt = "select * from test where a > 1.2 and (b < 2 - 1) and b in (1,2) limit -2"
+// var sqlStmt = "INSERT into x(x, y) values(1, 2)"
+
+var sqlStmt = "create table a.b(x int, y double, primary key (x, y))"
+
+// var sqlStmt = "select a, b from test where a > 1.2 and (b < 2 - 1 or b in (1,2)) limit -2"
 
 func Test_Parse(t *testing.T) {
 	expr, err := Parse(sqlStmt)
