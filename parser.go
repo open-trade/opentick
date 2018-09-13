@@ -67,6 +67,20 @@ type AstTableName struct {
 	B *string `["." @Ident]`
 }
 
+func (self *AstTableName) TableName() string {
+	if self.B == nil {
+		return *self.A
+	}
+	return *self.B
+}
+
+func (self *AstTableName) DatabaseName() string {
+	if self.B == nil {
+		return ""
+	}
+	return *self.A
+}
+
 type AstSelect struct {
 	Selected *AstSelectExpression `@@`
 	From     *AstTableName        `"FROM" @@`
