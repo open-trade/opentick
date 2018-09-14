@@ -46,8 +46,8 @@ type AstCreate struct {
 }
 
 type AstCreateTable struct {
-	Name   *AstTableName `@@`
-	Fields []AstTypeDef  `"(" @@ {"," @@} ")"`
+	Name *AstTableName `@@`
+	Cols []AstTypeDef  `"(" @@ {"," @@} ")"`
 }
 
 type AstTypeDef struct {
@@ -58,7 +58,7 @@ type AstTypeDef struct {
 
 type AstInsert struct {
 	Table  *AstTableName `"INTO" @@`
-	Fields []string      `"(" @Ident {"," @Ident} ")"`
+	Cols   []string      `"(" @Ident {"," @Ident} ")"`
 	Values []AstValue    `"VALUES" "(" @@ {"," @@} ")"`
 }
 
@@ -89,8 +89,8 @@ type AstSelect struct {
 }
 
 type AstSelectExpression struct {
-	All    *string  `@"*"`
-	Fields []string `| @Ident {"," @Ident}`
+	All  *string  `@"*"`
+	Cols []string `| @Ident {"," @Ident}`
 }
 
 type AstExpression struct {

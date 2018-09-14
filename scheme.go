@@ -1,14 +1,14 @@
 package opentick
 
 import (
+	"encoding/binary"
 	"errors"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"strings"
 )
 
-type DataType int
+type DataType uint32
 
 const (
 	UnknowDataType DataType = iota
@@ -34,7 +34,7 @@ func CreateDatabase(db fdb.Transactor, dbName string) (res bool, err error) {
 		err = errors.New(dbName + " already exists")
 		return
 	}
-	dir, err2 := directory.Create(db, path, nil)
+	_, err2 := directory.Create(db, path, nil)
 	if err2 != nil {
 		err = err2
 		return
@@ -43,8 +43,78 @@ func CreateDatabase(db fdb.Transactor, dbName string) (res bool, err error) {
 }
 
 type typeTuple struct {
-	i int
+	i uint32
 	t DataType
+}
+
+type TableColDef struct {
+	Name string
+	Type DataType
+}
+
+const SchemeVersion uint32 = 1
+
+func (self *TableColDef) encode() []byte {
+	var out []byte
+	bn := make([]byte, 4)
+	binary.BigEndian.PutUint32(bn, uint32(len(self.Name)))
+	out = append(bn, []byte(self.Name)...)
+	binary.BigEndian.PutUint32(bn, uint32(self.Type))
+	return append(out, bn...)
+}
+
+func decodeTableColDef(bytes []byte, out *TableColDef, version uint32) []byte {
+	n := binary.BigEndian.Uint32(bytes)
+	bytes = bytes[4:]
+	out.Name = string(bytes[:n])
+	bytes = bytes[n:]
+	out.Type = DataType(binary.BigEndian.Uint32(bytes))
+	return bytes[4:]
+}
+
+type TableScheme struct {
+	Cols []TableColDef
+	Key  []uint32
+}
+
+func (self *TableScheme) encode() []byte {
+	var out []byte
+	bn := make([]byte, 4)
+	binary.BigEndian.PutUint32(bn, SchemeVersion)
+	out = bn
+	binary.BigEndian.PutUint32(bn, uint32(len(self.Cols)))
+	out = append(out, bn...)
+	for _, col := range self.Cols {
+		out = append(out, col.encode()...)
+	}
+	binary.BigEndian.PutUint32(bn, uint32(len(self.Key)))
+	out = append(out, bn...)
+	for _, k := range self.Key {
+		binary.BigEndian.PutUint32(bn, uint32(k))
+		out = append(out, bn...)
+	}
+	return out
+}
+
+func decodeTableScheme(bytes []byte) *TableScheme {
+	v := binary.BigEndian.Uint32(bytes)
+	bytes = bytes[4:]
+	t := TableScheme{}
+	n := binary.BigEndian.Uint32(bytes)
+	bytes = bytes[4:]
+	for i := uint32(0); i < n; i++ {
+		col := TableColDef{}
+		bytes = decodeTableColDef(bytes, &col, v)
+		t.Cols = append(t.Cols, col)
+	}
+	n = binary.BigEndian.Uint32(bytes)
+	bytes = bytes[4:]
+	for i := uint32(0); i < n; i++ {
+		k := binary.BigEndian.Uint32(bytes)
+		t.Key = append(t.Key, k)
+		bytes = bytes[4:]
+	}
+	return &t
 }
 
 func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res bool, err error) {
@@ -56,11 +126,25 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 		return
 	}
 	tblName := ast.Name.TableName()
+	pathScheme := []string{"db", dbName, "scheme", tblName}
+	exists, err1 := directory.Exists(db, pathScheme)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if exists {
+		err = errors.New(dbName + "." + tblName + " already exists")
+		return
+	}
 	m := map[string]typeTuple{}
-	var key []string
-	for _, f := range ast.Fields {
+	var keyStrs []string
+	for _, f := range ast.Cols {
 		if f.Key != nil {
-			key = f.Key
+			if keyStrs != nil {
+				err = errors.New("Duplicate PRIMARY KEY")
+				return
+			}
+			keyStrs = f.Key
 			continue
 		}
 		if _, ok := m[*f.Name]; ok {
@@ -73,10 +157,11 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 			err = errors.New("Unknown type " + *f.Type)
 			return
 		}
-		m[*f.Name] = typeTuple{i, t}
+		m[*f.Name] = typeTuple{uint32(i), t}
 	}
 	has := map[string]bool{}
-	for _, k := range key {
+	var keyIndices []uint32
+	for _, k := range keyStrs {
 		if _, ok := m[k]; !ok {
 			err = errors.New("Unknown definition " + k + " referenced in PRIMARY KEY")
 			return
@@ -86,9 +171,15 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 			return
 		}
 		has[k] = true
+		keyIndices = append(keyIndices, m[k].i)
 	}
-	if len(key) == 0 {
+	if len(keyIndices) == 0 {
 		err = errors.New("PRIMARY KEY not declared")
+		return
+	}
+	_, err2 := directory.Create(db, pathScheme, nil)
+	if err2 != nil {
+		err = err2
 		return
 	}
 	return
