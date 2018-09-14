@@ -14,6 +14,9 @@ require (
 	github.com/koron/iferr v0.0.0-20180615142939-bb332a3b1d91 // indirect
 	github.com/mattn/go-colorable v0.0.9 // indirect
 	github.com/mattn/go-isatty v0.0.4 // indirect
+	github.com/mitchellh/go-homedir v1.0.0 // indirect
+	github.com/motemen/go-quickfix v0.0.0-20160413151302-5c522febc679 // indirect
+	github.com/motemen/gore v0.3.0 // indirect
 	github.com/peterh/liner v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.0.6 // indirect

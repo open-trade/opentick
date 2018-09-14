@@ -10,6 +10,8 @@ import (
 
 type DataType uint32
 
+var FdbVersion = 520
+
 const (
 	UnknowDataType DataType = iota
 	TinyInt
@@ -23,7 +25,7 @@ const (
 	Text
 )
 
-func CreateDatabase(db fdb.Transactor, dbName string) (res bool, err error) {
+func CreateDatabase(db fdb.Transactor, dbName string) (err error) {
 	path := []string{"db", dbName}
 	exists, err1 := directory.Exists(db, path)
 	if err1 != nil {
@@ -31,7 +33,7 @@ func CreateDatabase(db fdb.Transactor, dbName string) (res bool, err error) {
 		return
 	}
 	if exists {
-		err = errors.New(dbName + " already exists")
+		err = errors.New("Database " + dbName + " already exists")
 		return
 	}
 	_, err2 := directory.Create(db, path, nil)
@@ -39,7 +41,48 @@ func CreateDatabase(db fdb.Transactor, dbName string) (res bool, err error) {
 		err = err2
 		return
 	}
-	return true, nil
+	return
+}
+
+func ListTables(db fdb.Transactor, dbName string) (tables []string, err error) {
+	path := []string{"db", dbName}
+	dir, err1 := directory.Open(db, path, nil)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if dir == nil {
+		err = errors.New("Database " + dbName + " does not exist")
+		return
+	}
+	tables, err = dir.List(db, nil)
+	return
+}
+
+func DropDatabase(db fdb.Transactor, dbName string) (err error) {
+	path := []string{"db", dbName}
+	exists, err1 := directory.Exists(db, path)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if !exists {
+		err = errors.New("Database " + dbName + " does not exist")
+		return
+	}
+	tables, err2 := ListTables(db, dbName)
+	if err2 != nil {
+		err = err2
+		return
+	}
+	for _, tbl := range tables {
+		err = DropTable(db, dbName, tbl)
+		if err != nil {
+			return
+		}
+	}
+	_, err = directory.Root().Remove(db, path)
+	return
 }
 
 type typeTuple struct {
@@ -52,7 +95,7 @@ type TableColDef struct {
 	Type DataType
 }
 
-const SchemeVersion uint32 = 1
+const schemeVersion uint32 = 1
 
 func (self *TableColDef) encode() []byte {
 	var out []byte
@@ -80,7 +123,7 @@ type TableScheme struct {
 func (self *TableScheme) encode() []byte {
 	var out []byte
 	bn := make([]byte, 4)
-	binary.BigEndian.PutUint32(bn, SchemeVersion)
+	binary.BigEndian.PutUint32(bn, schemeVersion)
 	out = bn
 	binary.BigEndian.PutUint32(bn, uint32(len(self.Cols)))
 	out = append(out, bn...)
@@ -115,7 +158,7 @@ func decodeTableScheme(bytes []byte) TableScheme {
 	return TableScheme{cols, key}
 }
 
-func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res bool, err error) {
+func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err error) {
 	if dbName == "" {
 		dbName = ast.Name.DatabaseName()
 	}
@@ -123,19 +166,29 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
 		return
 	}
-	tblName := ast.Name.TableName()
-	pathScheme := []string{"db", dbName, "scheme", tblName}
-	exists, err1 := directory.Exists(db, pathScheme)
+	exists1, err1 := directory.Exists(db, []string{"db", dbName})
 	if err1 != nil {
 		err = err1
 		return
 	}
-	if exists {
-		err = errors.New(dbName + "." + tblName + " already exists")
+	if !exists1 {
+		err = errors.New("Database " + dbName + " does not exist")
+		return
+	}
+	tblName := ast.Name.TableName()
+	pathTable := []string{"db", dbName, tblName}
+	exists2, err1 := directory.Exists(db, pathTable)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if exists2 {
+		err = errors.New("Table " + dbName + "." + tblName + " already exists")
 		return
 	}
 	m := map[string]typeTuple{}
 	var keyStrs []string
+	tbl := TableScheme{}
 	for _, f := range ast.Cols {
 		if f.Key != nil {
 			if keyStrs != nil {
@@ -156,9 +209,9 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 			return
 		}
 		m[*f.Name] = typeTuple{uint32(i), t}
+		tbl.Cols = append(tbl.Cols, TableColDef{*f.Name, t})
 	}
 	has := map[string]bool{}
-	var keyIndices []uint32
 	for _, k := range keyStrs {
 		if _, ok := m[k]; !ok {
 			err = errors.New("Unknown definition " + k + " referenced in PRIMARY KEY")
@@ -169,17 +222,50 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res boo
 			return
 		}
 		has[k] = true
-		keyIndices = append(keyIndices, m[k].i)
+		tbl.Key = append(tbl.Key, m[k].i)
 	}
-	if len(keyIndices) == 0 {
+	if len(tbl.Key) == 0 {
 		err = errors.New("PRIMARY KEY not declared")
 		return
 	}
-	_, err2 := directory.Create(db, pathScheme, nil)
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		dirTable, err2 := directory.Create(tr, pathTable, nil)
+		if err2 != nil {
+			err = err2
+			return
+		}
+		dirScheme, err3 := dirTable.Create(tr, []string{"scheme"}, nil)
+		if err3 != nil {
+			err = err3
+			return
+		}
+		tr.Set(fdb.Key(dirScheme.Bytes()), tbl.encode())
+		return
+	})
+	return
+}
+
+func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
+	pathTable := []string{"db", dbName, tblName}
+	dirTable, err1 := directory.Open(db, pathTable, nil)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if dirTable == nil {
+		err = errors.New("Table " + dbName + "." + tblName + " does not exist")
+		return
+	}
+	dirScheme, err2 := dirTable.Open(db, []string{"scheme"}, nil)
 	if err2 != nil {
 		err = err2
 		return
 	}
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		tr.Clear(fdb.Key(dirScheme.Bytes()))
+		_, err = dirTable.Remove(tr, nil)
+		return
+	})
 	return
 }
 

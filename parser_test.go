@@ -28,3 +28,23 @@ func Benchmark_Parse(b *testing.B) {
 		}
 	}
 }
+
+func Test_CreateTableSql(t *testing.T) {
+	sqlCreateTable1 := `
+	create table test.test(
+		symbol_id bigint,
+		interval int, 
+  	tm timestamp,
+		open double,
+		high double,
+		low double,
+		close double,
+		volume double,
+		primary key (symbol_id, interval, tm)
+	)
+  `
+	_, err := Parse(sqlCreateTable1)
+	if err != nil {
+		t.Error(err)
+	}
+}
