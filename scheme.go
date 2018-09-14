@@ -96,25 +96,23 @@ func (self *TableScheme) encode() []byte {
 	return out
 }
 
-func decodeTableScheme(bytes []byte) *TableScheme {
+func decodeTableScheme(bytes []byte) TableScheme {
 	v := binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
-	t := TableScheme{}
 	n := binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
+	cols := make([]TableColDef, n)
 	for i := uint32(0); i < n; i++ {
-		col := TableColDef{}
-		bytes = decodeTableColDef(bytes, &col, v)
-		t.Cols = append(t.Cols, col)
+		bytes = decodeTableColDef(bytes, &cols[i], v)
 	}
 	n = binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
+	key := make([]uint32, n)
 	for i := uint32(0); i < n; i++ {
-		k := binary.BigEndian.Uint32(bytes)
-		t.Key = append(t.Key, k)
+		key[i] = binary.BigEndian.Uint32(bytes)
 		bytes = bytes[4:]
 	}
-	return &t
+	return TableScheme{cols, key}
 }
 
 func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (res bool, err error) {

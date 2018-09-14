@@ -18,9 +18,9 @@ func Test_EncodeTableColDef(t *testing.T) {
 func Benchmark_DecodeTableColDef(b *testing.B) {
 	b.StopTimer()
 	bytes := d.encode()
-	d2 := TableColDef{}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ { //use b.N for looping
+		d2 := TableColDef{}
 		decodeTableColDef(bytes, &d2, SchemeVersion)
 	}
 }
