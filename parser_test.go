@@ -2,27 +2,109 @@ package opentick
 
 import (
 	"github.com/alecthomas/repr"
+	"github.com/stretchr/testify/assert"
+	"strings"
 	"testing"
 )
 
-// var sqlStmt = "INSERT into x(x, y) values(1, 2)"
-
-var sqlStmt = "create table a.b(x int, y double, primary key (x, y))"
-
-// var sqlStmt = "select a, b from test where a > 1.2 and (b < 2 - 1 or b in (1,2)) limit -2"
+var sqlSelectStmt = "select a, b from test where (a > 1.2) and (b < 2 or (b in (1,2))) limit -2"
+var sqlInsertStmt = "INSERT into x(x, y) values(1, 2)"
+var sqlInsertAst = `
+&opentick.Ast{
+  Insert: &opentick.AstInsert{
+    Table: &opentick.AstTableName{
+      A: &"x",
+    },
+    Cols: []string{
+      "x",
+      "y",
+    },
+    Values: []opentick.AstValue{
+      opentick.AstValue{
+        Number: &1,
+      },
+      opentick.AstValue{
+        Number: &2,
+      },
+    },
+  },
+}
+`
+var sqlSelectAst = `
+&opentick.Ast{
+  Select: &opentick.AstSelect{
+    Selected: &opentick.AstSelectExpression{
+      Cols: []string{
+        "a",
+        "b",
+      },
+    },
+    From: &opentick.AstTableName{
+      A: &"test",
+    },
+    Where: &opentick.AstExpression{
+      And: []opentick.AstCondition{
+        opentick.AstCondition{
+          LHS: &"a",
+          ConditionRHS: &opentick.AstConditionRHS{
+            Compare: &opentick.AstCompare{
+              Operator: &">",
+              RHS: &opentick.AstValue{
+                Number: &1.2,
+              },
+            },
+          },
+        },
+        opentick.AstCondition{
+          SubExpression: &opentick.AstExpression{
+            Or: []opentick.AstCondition{
+              opentick.AstCondition{
+                LHS: &"b",
+                ConditionRHS: &opentick.AstConditionRHS{
+                  Compare: &opentick.AstCompare{
+                    Operator: &"<",
+                    RHS: &opentick.AstValue{
+                      Number: &2,
+                    },
+                  },
+                },
+              },
+              opentick.AstCondition{
+                LHS: &"b",
+                ConditionRHS: &opentick.AstConditionRHS{
+                  In: []opentick.AstValue{
+                    opentick.AstValue{
+                      Number: &1,
+                    },
+                    opentick.AstValue{
+                      Number: &2,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    Limit: &-2,
+  },
+}
+`
 
 func Test_Parse(t *testing.T) {
-	expr, err := Parse(sqlStmt)
-	repr.Println(expr, repr.Indent("  "), repr.OmitEmpty(true))
-	if err != nil {
-		t.Error(err)
-	}
+	expr, err := Parse(sqlSelectStmt)
+	expr.Select.Where.Reduce()
+	assert.Equal(t, repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)), strings.TrimSpace(sqlSelectAst))
+	assert.Equal(t, err, nil)
+	expr, err = Parse(sqlInsertStmt)
+	assert.Equal(t, repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)), strings.TrimSpace(sqlInsertAst))
 }
 
 func Benchmark_Parse(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ { //use b.N for looping
-		_, err := Parse(sqlStmt)
+		_, err := Parse(sqlSelectStmt)
 		if err != nil {
 			b.Fatal(err)
 		}

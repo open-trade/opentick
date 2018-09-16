@@ -22,7 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.0.6 // indirect
 	github.com/spf13/cobra v0.0.3 // indirect
 	github.com/spf13/pflag v1.0.2 // indirect
-	github.com/stretchr/testify v1.2.2 // indirect
+	github.com/stretchr/testify v1.2.2
 	github.com/unrolled/render v0.0.0-20180807193321-4206df6ff701
 	golang.org/x/arch v0.0.0-20180516175055-5de9028c2478 // indirect
 	golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b // indirect

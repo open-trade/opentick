@@ -11,7 +11,7 @@ var (
 		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d*\.?\d+([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
-		`|(?P<Operators><>|!=|<=|>=|[-+*/%,.()=<>?])`,
+		`|(?P<Operator><>|!=|<=|>=|[-+*/%,.()=<>?])`,
 	))
 	sqlParser = participle.MustBuild(
 		&Ast{},
@@ -94,50 +94,71 @@ type AstSelectExpression struct {
 }
 
 type AstExpression struct {
-	Or []AstAndCondition `@@ {"OR" @@}`
+	OrAnd     []AstAndCondition `@@ {"OR" @@}`
+	Or        []AstCondition
+	And       []AstCondition
+	Condition *AstCondition
 }
 
 type AstAndCondition struct {
-	And []AstConditionOperand `@@ {"AND" @@}`
+	And []AstCondition `@@ {"AND" @@}`
 }
 
-type AstConditionOperand struct {
-	LHS          *AstTerm         `@@`
-	ConditionRHS *AstConditionRHS `[@@]`
+type AstCondition struct {
+	LHS           *string          `@Ident`
+	ConditionRHS  *AstConditionRHS `[@@]`
+	SubExpression *AstExpression   `| "(" @@ ")"`
 }
 
 type AstConditionRHS struct {
 	Compare *AstCompare `@@`
-	In      []AstTerm   `| "IN" "(" @@ {"," @@} ")"`
+	In      []AstValue  `| "IN" "(" @@ {"," @@} ")"`
 }
 
 type AstCompare struct {
-	Operator *string     `@("<>" | "<=" | ">=" | "=" | "<" | ">" | "!=")`
-	RHS      *AstSummand `@@`
-}
-
-type AstSummand struct {
-	LHS *AstFactor `@@`
-	Op  *string    `[@("+" | "-")`
-	RHS *AstFactor `@@]`
-}
-
-type AstFactor struct {
-	LHS *AstTerm `@@`
-	Op  *string  `[@("*" | "/" | "%")`
-	RHS *AstTerm `@@]`
-}
-
-type AstTerm struct {
-	Symbol        *string        `@Ident`
-	Value         *AstValue      `| @@`
-	SubExpression *AstExpression `| "(" @@ ")"`
+	Operator *string   `@("<>" | "<=" | ">=" | "=" | "<" | ">" | "!=")`
+	RHS      *AstValue `@@`
 }
 
 type AstValue struct {
-	Number  *float64    `@Number`
-	String  *string     `| @String`
-	Boolean *AstBoolean `| @("TRUE" | "FALSE")`
+	Number      *float64    `@Number`
+	String      *string     `| @String`
+	Placeholder *string     `| "?"`
+	Boolean     *AstBoolean `| @("TRUE" | "FALSE")`
+}
+
+func (expr *AstExpression) Reduce() {
+	for i := 0; i < len(expr.OrAnd); i++ {
+		for j := 0; j < len(expr.OrAnd[i].And); j++ {
+			c := &expr.OrAnd[i].And[j]
+			if c.SubExpression != nil {
+				c.SubExpression.Reduce()
+				if c.SubExpression.Condition != nil {
+					expr.OrAnd[i].And[j] = *c.SubExpression.Condition
+				}
+			}
+		}
+	}
+	if len(expr.OrAnd) == 1 {
+		if len(expr.OrAnd[0].And) == 1 {
+			expr.Condition = &expr.OrAnd[0].And[0]
+		} else {
+			expr.And = expr.OrAnd[0].And
+		}
+	} else {
+		conds := make([]AstCondition, len(expr.OrAnd))
+		for i := 0; i < len(expr.OrAnd); i++ {
+			if len(expr.OrAnd[i].And) == 1 {
+				conds[i] = expr.OrAnd[i].And[0]
+			} else {
+				tmp := &AstExpression{}
+				tmp.And = expr.OrAnd[i].And
+				conds[i].SubExpression = tmp
+			}
+		}
+		expr.Or = conds
+	}
+	expr.OrAnd = nil
 }
 
 func Parse(sql string) (*Ast, error) {
