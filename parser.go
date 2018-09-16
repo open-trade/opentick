@@ -94,10 +94,9 @@ type AstSelectExpression struct {
 }
 
 type AstExpression struct {
-	OrAnd     []AstAndCondition `@@ {"OR" @@}`
-	Or        []AstCondition
-	And       []AstCondition
-	Condition *AstCondition
+	OrAnd []AstAndCondition `@@ {"OR" @@}`
+	And   []AstCondition
+	Or    []AstCondition
 }
 
 type AstAndCondition struct {
@@ -127,24 +126,18 @@ type AstValue struct {
 	Boolean     *AstBoolean `| @("TRUE" | "FALSE")`
 }
 
+// reduce OrAnd
 func (expr *AstExpression) Reduce() {
 	for i := 0; i < len(expr.OrAnd); i++ {
 		for j := 0; j < len(expr.OrAnd[i].And); j++ {
 			c := &expr.OrAnd[i].And[j]
 			if c.SubExpression != nil {
 				c.SubExpression.Reduce()
-				if c.SubExpression.Condition != nil {
-					expr.OrAnd[i].And[j] = *c.SubExpression.Condition
-				}
 			}
 		}
 	}
 	if len(expr.OrAnd) == 1 {
-		if len(expr.OrAnd[0].And) == 1 {
-			expr.Condition = &expr.OrAnd[0].And[0]
-		} else {
-			expr.And = expr.OrAnd[0].And
-		}
+		expr.And = expr.OrAnd[0].And
 	} else {
 		conds := make([]AstCondition, len(expr.OrAnd))
 		for i := 0; i < len(expr.OrAnd); i++ {
@@ -159,6 +152,35 @@ func (expr *AstExpression) Reduce() {
 		expr.Or = conds
 	}
 	expr.OrAnd = nil
+}
+
+func (expr *AstExpression) Flatten() {
+	if expr.OrAnd != nil {
+		panic("Please Reduce first")
+	}
+
+	if expr.And != nil {
+		for i := 0; i < len(expr.And); {
+			if expr.And[i].SubExpression != nil {
+				expr.And[i].SubExpression.Flatten()
+				if expr.And[i].SubExpression.And != nil {
+					and2 := expr.And[i].SubExpression.And
+					expr.And[i] = and2[0]
+					expr.And = append(expr.And, and2[1:]...)
+					i += len(and2)
+					continue
+				} else {
+				}
+			}
+			i += 1
+		}
+	} else {
+		for i := 0; i < len(expr.Or); i++ {
+			if expr.Or[i].SubExpression != nil {
+				expr.Or[i].SubExpression.Flatten()
+			}
+		}
+	}
 }
 
 func Parse(sql string) (*Ast, error) {
