@@ -6,11 +6,13 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"strings"
+	"sync"
 )
 
 type DataType uint32
 
 var FdbVersion = 520
+var TableSchemeMap = sync.Map{}
 
 const (
 	UnknowDataType DataType = iota
@@ -91,8 +93,17 @@ type typeTuple struct {
 }
 
 type TableColDef struct {
-	Name string
-	Type DataType
+	Name   string
+	Type   DataType
+	IsKey  bool
+	PosCol uint32
+	Pos    uint32 // position in Key or Value
+}
+
+func NewTableColDef(name string, t DataType) (tbl TableColDef) {
+	tbl.Name = name
+	tbl.Type = t
+	return
 }
 
 const schemeVersion uint32 = 1
@@ -116,8 +127,42 @@ func decodeTableColDef(bytes []byte, out *TableColDef, version uint32) []byte {
 }
 
 type TableScheme struct {
-	Cols []TableColDef
-	Key  []uint32
+	Cols    []TableColDef
+	Key     []*TableColDef
+	Value   []*TableColDef
+	NameMap map[string]*TableColDef
+	Dir     directory.DirectorySubspace
+}
+
+func NewTableScheme(cols []TableColDef, key []int) (tbl TableScheme) {
+	tbl.Cols = cols
+	tbl.Key = make([]*TableColDef, len(key))
+	for i := 0; i < len(key); i++ {
+		tbl.Key[i] = &cols[key[i]]
+	}
+	tbl.fill()
+	return
+}
+
+func (self *TableScheme) fill() {
+	self.Value = make([]*TableColDef, len(self.Cols)-len(self.Key))
+	for i := 0; i < len(self.Key); i++ {
+		col := self.Key[i]
+		col.IsKey = true
+		col.Pos = uint32(i)
+	}
+	n := 0
+	self.NameMap = make(map[string]*TableColDef)
+	for i := 0; i < len(self.Cols); i++ {
+		col := &self.Cols[i]
+		col.PosCol = uint32(i)
+		self.NameMap[col.Name] = col
+		if !col.IsKey {
+			self.Value[n] = col
+			col.Pos = uint32(n)
+			n++
+		}
+	}
 }
 
 func (self *TableScheme) encode() []byte {
@@ -133,7 +178,7 @@ func (self *TableScheme) encode() []byte {
 	binary.BigEndian.PutUint32(bn, uint32(len(self.Key)))
 	out = append(out, bn...)
 	for _, k := range self.Key {
-		binary.BigEndian.PutUint32(bn, uint32(k))
+		binary.BigEndian.PutUint32(bn, uint32(k.PosCol))
 		out = append(out, bn...)
 	}
 	return out
@@ -150,12 +195,16 @@ func decodeTableScheme(bytes []byte) TableScheme {
 	}
 	n = binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
-	key := make([]uint32, n)
+	key := make([]*TableColDef, n)
 	for i := uint32(0); i < n; i++ {
-		key[i] = binary.BigEndian.Uint32(bytes)
+		key[i] = &cols[int(binary.BigEndian.Uint32(bytes))]
 		bytes = bytes[4:]
 	}
-	return TableScheme{cols, key}
+	var tbl TableScheme
+	tbl.Cols = cols
+	tbl.Key = key
+	tbl.fill()
+	return tbl
 }
 
 func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err error) {
@@ -209,7 +258,7 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			return
 		}
 		m[*f.Name] = typeTuple{uint32(i), t}
-		tbl.Cols = append(tbl.Cols, TableColDef{*f.Name, t})
+		tbl.Cols = append(tbl.Cols, NewTableColDef(*f.Name, t))
 	}
 	has := map[string]bool{}
 	for _, k := range keyStrs {
@@ -222,7 +271,7 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			return
 		}
 		has[k] = true
-		tbl.Key = append(tbl.Key, m[k].i)
+		tbl.Key = append(tbl.Key, &tbl.Cols[m[k].i])
 	}
 	if len(tbl.Key) == 0 {
 		err = errors.New("PRIMARY KEY not declared")
@@ -239,26 +288,27 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			err = err3
 			return
 		}
+		tbl.fill()
 		tr.Set(fdb.Key(dirScheme.Bytes()), tbl.encode())
 		return
 	})
 	return
 }
 
-func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
+func openTable(db fdb.Transactor, dbName string, tblName string) (dirTable directory.DirectorySubspace, dirScheme directory.DirectorySubspace, err error) {
 	pathTable := []string{"db", dbName, tblName}
-	dirTable, err1 := directory.Open(db, pathTable, nil)
+	dirTable, err = directory.Open(db, pathTable, nil)
+	if err != nil {
+		return
+	}
+	dirScheme, err = dirTable.Open(db, []string{"scheme"}, nil)
+	return
+}
+
+func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
+	dirTable, dirScheme, err1 := openTable(db, dbName, tblName)
 	if err1 != nil {
 		err = err1
-		return
-	}
-	if dirTable == nil {
-		err = errors.New("Table " + dbName + "." + tblName + " does not exist")
-		return
-	}
-	dirScheme, err2 := dirTable.Open(db, []string{"scheme"}, nil)
-	if err2 != nil {
-		err = err2
 		return
 	}
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
@@ -291,4 +341,28 @@ func parseDataType(typeStr string) DataType {
 		return Text
 	}
 	return UnknowDataType
+}
+
+func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl TableScheme, err error) {
+	fullName := dbName + "." + tblName
+	tmp, _ := TableSchemeMap.Load(fullName)
+	if tmp != nil {
+		tbl = tmp.(TableScheme)
+		return
+	}
+	dirTable, dirScheme, err1 := openTable(db, dbName, tblName)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		tbl = decodeTableScheme(tr.Get(fdb.Key(dirScheme.Bytes())).MustGet())
+		return
+	})
+	if err != nil {
+		return
+	}
+	tbl.Dir = dirTable
+	TableSchemeMap.Store(fullName, dirTable)
+	return
 }

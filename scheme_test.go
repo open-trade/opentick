@@ -10,15 +10,14 @@ import (
 	"testing"
 )
 
-var d = TableColDef{"Test", Double}
+var d = NewTableColDef("Test", Double)
 
 func Test_EncodeTableColDef(t *testing.T) {
 	bytes := d.encode()
 	d2 := TableColDef{}
 	decodeTableColDef(bytes, &d2, schemeVersion)
-	if d2.Name != d.Name || d2.Type != d.Type {
-		t.Error("failed")
-	}
+	assert.Equal(t, d2.Name, d.Name)
+	assert.Equal(t, d2.Type, d.Type)
 }
 
 func Benchmark_DecodeTableColDef(b *testing.B) {
@@ -31,14 +30,14 @@ func Benchmark_DecodeTableColDef(b *testing.B) {
 	}
 }
 
-var tbl = TableScheme{[]TableColDef{d, d, d}, []uint32{0, 1, 2}}
+var cols = []TableColDef{d, d, d}
+var tbl = NewTableScheme(cols, []int{2, 1})
 
 func Test_EncodeTableScheme(t *testing.T) {
 	bytes := tbl.encode()
 	t2 := decodeTableScheme(bytes)
-	if t2.Cols[2] != tbl.Cols[2] || t2.Key[2] != tbl.Key[2] {
-		t.Error("failed")
-	}
+	assert.Equal(t, t2.Cols[2], tbl.Cols[2])
+	assert.Equal(t, *t2.Key[1], *tbl.Key[1])
 }
 
 func Benchmark_DecodeTableScheme(b *testing.B) {
@@ -125,8 +124,8 @@ func Test_CreateTable(t *testing.T) {
 	sqlCreateTable1 := `
 	create table test.test(
 		symbol_id bigint,
-		interval int, 
   	tm timestamp,
+		interval int, 
 		open double,
 		high double,
 		low double,
@@ -141,8 +140,36 @@ func Test_CreateTable(t *testing.T) {
 	assert.NotEqual(t, err, nil)
 	assert.Equal(t, err.Error(), "Database test does not exist")
 	CreateDatabase(db, "test")
+
+	ast1, _ := Parse("create table test.test(x int, y int, x int)")
+	err = CreateTable(db, "", ast1.Create.Table)
+	assert.Equal(t, err.Error(), "Multiple definition of identifier x")
+
+	ast2, _ := Parse("create table test.test(x int, y int, primary key (x, x))")
+	err = CreateTable(db, "", ast2.Create.Table)
+	assert.Equal(t, err.Error(), "Duplicate definition x referenced in PRIMARY KEY")
+
+	ast3, _ := Parse("create table test.test(x int, y int)")
+	err = CreateTable(db, "", ast3.Create.Table)
+	assert.Equal(t, err.Error(), "PRIMARY KEY not declared")
+
+	ast4, _ := Parse("create table test.test(x int, y int, primary key(x, z))")
+	err = CreateTable(db, "", ast4.Create.Table)
+	assert.Equal(t, err.Error(), "Unknown definition z referenced in PRIMARY KEY")
+
 	err = CreateTable(db, "", ast.Create.Table)
 	assert.Equal(t, err, nil)
-	Exists, _ := directory.Exists(db, []string{"db", "test", "test", "scheme"})
-	assert.Equal(t, Exists, true)
+	tbl, err1 := GetTableScheme(db, "test", "test")
+	assert.Equal(t, err1, nil)
+	assert.Equal(t, tbl.Cols[7].Name, "volume")
+	assert.Equal(t, tbl.Key[1].Name, "interval")
+	assert.Equal(t, tbl.NameMap["symbol_id"].PosCol, uint32(0))
+	assert.Equal(t, tbl.NameMap["tm"].PosCol, uint32(1))
+	assert.Equal(t, tbl.NameMap["tm"].Pos, uint32(2))
+	assert.Equal(t, tbl.NameMap["close"].PosCol, uint32(6))
+	assert.Equal(t, tbl.NameMap["close"].Pos, uint32(3))
+	dir, _ := directory.Open(db, []string{"db", "test", "test"}, nil)
+	dir2, _ := directory.Open(db, []string{"db", "test", "test", "scheme"}, nil)
+	assert.Equal(t, len(dir.Bytes()), len(dir2.Bytes()))
+	assert.Equal(t, string(tbl.Dir.Bytes()), string(dir.Bytes()))
 }

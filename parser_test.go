@@ -98,7 +98,8 @@ func Test_CreateTableSql(t *testing.T) {
 	)
   `
 	_, err := Parse(sqlCreateTable1)
-	if err != nil {
-		t.Error(err)
-	}
+	assert.Equal(t, err, nil)
+
+	_, err = Parse("create table test.test(x x)")
+	assert.NotEqual(t, err, nil)
 }
