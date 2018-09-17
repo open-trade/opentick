@@ -37,7 +37,7 @@ func Test_EncodeTableScheme(t *testing.T) {
 	bytes := tbl.encode()
 	t2 := decodeTableScheme(bytes)
 	assert.Equal(t, t2.Cols[2], tbl.Cols[2])
-	assert.Equal(t, *t2.Key[1], *tbl.Key[1])
+	assert.Equal(t, *t2.Keys[1], *tbl.Keys[1])
 }
 
 func Benchmark_DecodeTableScheme(b *testing.B) {
@@ -162,7 +162,7 @@ func Test_CreateTable(t *testing.T) {
 	tbl, err1 := GetTableScheme(db, "test", "test")
 	assert.Equal(t, err1, nil)
 	assert.Equal(t, tbl.Cols[7].Name, "volume")
-	assert.Equal(t, tbl.Key[1].Name, "interval")
+	assert.Equal(t, tbl.Keys[1].Name, "interval")
 	assert.Equal(t, tbl.NameMap["symbol_id"].PosCol, uint32(0))
 	assert.Equal(t, tbl.NameMap["tm"].PosCol, uint32(1))
 	assert.Equal(t, tbl.NameMap["tm"].Pos, uint32(2))

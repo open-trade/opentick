@@ -97,7 +97,7 @@ type TableColDef struct {
 	Type   DataType
 	IsKey  bool
 	PosCol uint32
-	Pos    uint32 // position in Key or Value
+	Pos    uint32 // position in Key or Values
 }
 
 func NewTableColDef(name string, t DataType) (tbl TableColDef) {
@@ -128,37 +128,36 @@ func decodeTableColDef(bytes []byte, out *TableColDef, version uint32) []byte {
 
 type TableScheme struct {
 	Cols    []TableColDef
-	Key     []*TableColDef
-	Value   []*TableColDef
+	Keys    []*TableColDef
+	Values  []*TableColDef
 	NameMap map[string]*TableColDef
 	Dir     directory.DirectorySubspace
 }
 
-func NewTableScheme(cols []TableColDef, key []int) (tbl TableScheme) {
+func NewTableScheme(cols []TableColDef, keys []int) (tbl TableScheme) {
 	tbl.Cols = cols
-	tbl.Key = make([]*TableColDef, len(key))
-	for i := 0; i < len(key); i++ {
-		tbl.Key[i] = &cols[key[i]]
+	tbl.Keys = make([]*TableColDef, len(keys))
+	for i := range keys {
+		tbl.Keys[i] = &cols[keys[i]]
 	}
 	tbl.fill()
 	return
 }
 
 func (self *TableScheme) fill() {
-	self.Value = make([]*TableColDef, len(self.Cols)-len(self.Key))
-	for i := 0; i < len(self.Key); i++ {
-		col := self.Key[i]
+	self.Values = make([]*TableColDef, len(self.Cols)-len(self.Keys))
+	for i, col := range self.Keys {
 		col.IsKey = true
 		col.Pos = uint32(i)
 	}
 	n := 0
 	self.NameMap = make(map[string]*TableColDef)
-	for i := 0; i < len(self.Cols); i++ {
+	for i := range self.Cols {
 		col := &self.Cols[i]
 		col.PosCol = uint32(i)
 		self.NameMap[col.Name] = col
 		if !col.IsKey {
-			self.Value[n] = col
+			self.Values[n] = col
 			col.Pos = uint32(n)
 			n++
 		}
@@ -175,9 +174,9 @@ func (self *TableScheme) encode() []byte {
 	for _, col := range self.Cols {
 		out = append(out, col.encode()...)
 	}
-	binary.BigEndian.PutUint32(bn, uint32(len(self.Key)))
+	binary.BigEndian.PutUint32(bn, uint32(len(self.Keys)))
 	out = append(out, bn...)
-	for _, k := range self.Key {
+	for _, k := range self.Keys {
 		binary.BigEndian.PutUint32(bn, uint32(k.PosCol))
 		out = append(out, bn...)
 	}
@@ -195,14 +194,14 @@ func decodeTableScheme(bytes []byte) TableScheme {
 	}
 	n = binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
-	key := make([]*TableColDef, n)
+	keys := make([]*TableColDef, n)
 	for i := uint32(0); i < n; i++ {
-		key[i] = &cols[int(binary.BigEndian.Uint32(bytes))]
+		keys[i] = &cols[int(binary.BigEndian.Uint32(bytes))]
 		bytes = bytes[4:]
 	}
 	var tbl TableScheme
 	tbl.Cols = cols
-	tbl.Key = key
+	tbl.Keys = keys
 	tbl.fill()
 	return tbl
 }
@@ -271,9 +270,9 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			return
 		}
 		has[k] = true
-		tbl.Key = append(tbl.Key, &tbl.Cols[m[k].i])
+		tbl.Keys = append(tbl.Keys, &tbl.Cols[m[k].i])
 	}
-	if len(tbl.Key) == 0 {
+	if len(tbl.Keys) == 0 {
 		err = errors.New("PRIMARY KEY not declared")
 		return
 	}
