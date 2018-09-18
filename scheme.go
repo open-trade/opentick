@@ -110,7 +110,8 @@ const schemeVersion uint32 = 1
 
 func (self *TableColDef) encode() []byte {
 	var out []byte
-	bn := make([]byte, 4)
+	var tmp [4]byte
+	bn := tmp[:]
 	binary.BigEndian.PutUint32(bn, uint32(len(self.Name)))
 	out = append(bn, []byte(self.Name)...)
 	binary.BigEndian.PutUint32(bn, uint32(self.Type))
@@ -166,7 +167,8 @@ func (self *TableScheme) fill() {
 
 func (self *TableScheme) encode() []byte {
 	var out []byte
-	bn := make([]byte, 4)
+	var tmp [4]byte
+	bn := tmp[:]
 	binary.BigEndian.PutUint32(bn, schemeVersion)
 	out = bn
 	binary.BigEndian.PutUint32(bn, uint32(len(self.Cols)))
