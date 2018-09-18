@@ -33,6 +33,7 @@ type Ast struct {
 	Insert *AstInsert `| "INSERT" @@`
 	Create *AstCreate `| "CREATE" @@`
 	Drop   *AstDrop   `| "DROP" @@`
+	Delete *AstDelete `| "DELETE" @@`
 }
 
 type AstDrop struct {
@@ -43,6 +44,11 @@ type AstDrop struct {
 type AstCreate struct {
 	Table    *AstCreateTable `"TABLE" @@`
 	Database *string         `| "DATABASE" @Ident`
+}
+
+type AstDelete struct {
+	Table *AstTableName  `"FROM" @@`
+	Where *AstExpression `["WHERE" @@]`
 }
 
 type AstCreateTable struct {

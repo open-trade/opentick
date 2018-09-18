@@ -288,7 +288,7 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			return
 		}
 		tbl.fill()
-		tr.Set(fdb.Key(dirScheme.Bytes()), tbl.encode())
+		tr.Set(dirScheme, tbl.encode())
 		return
 	})
 	return
@@ -305,14 +305,16 @@ func openTable(db fdb.Transactor, dbName string, tblName string) (dirTable direc
 }
 
 func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
+	TableSchemeMap.Delete(dbName + "." + tblName)
 	dirTable, dirScheme, err1 := openTable(db, dbName, tblName)
 	if err1 != nil {
 		err = err1
 		return
 	}
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-		tr.Clear(fdb.Key(dirScheme.Bytes()))
+		tr.Clear(dirScheme)
 		_, err = dirTable.Remove(tr, nil)
+		tr.ClearRange(dirTable)
 		return
 	})
 	return
@@ -355,13 +357,13 @@ func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl Table
 		return
 	}
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-		tbl = decodeTableScheme(tr.Get(fdb.Key(dirScheme.Bytes())).MustGet())
+		tbl = decodeTableScheme(tr.Get(dirScheme).MustGet())
 		return
 	})
 	if err != nil {
 		return
 	}
 	tbl.Dir = dirTable
-	TableSchemeMap.Store(fullName, dirTable)
+	TableSchemeMap.Store(fullName, tbl)
 	return
 }

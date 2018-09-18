@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func InsertTable(db fdb.Transactor, dbName string, ast *AstInsert, values []interface{}) (err error) {
+func InsertIntoTable(db fdb.Transactor, dbName string, ast *AstInsert, values []interface{}) (err error) {
 	if dbName == "" {
 		dbName = ast.Table.DatabaseName()
 	}
@@ -35,14 +35,14 @@ func InsertTable(db fdb.Transactor, dbName string, ast *AstInsert, values []inte
 			return
 		}
 		if col.IsKey {
-			if iKeys[i] >= 0 {
+			if iKeys[col.Pos] >= 0 {
 				err = errors.New("Duplicate column name " + colName)
 				return
 			}
 			nKeys++
 			iKeys[col.Pos] = i
 		} else {
-			if iValues[i] >= 0 {
+			if iValues[col.Pos] >= 0 {
 				err = errors.New("Duplicate column name " + colName)
 				return
 			}
@@ -55,9 +55,25 @@ func InsertTable(db fdb.Transactor, dbName string, ast *AstInsert, values []inte
 			if v < 0 {
 				missed = append(missed, scheme.Keys[i].Name)
 			}
-			err = errors.New("Some primary keys are missing: " + strings.Join(missed, ","))
-			return
 		}
+		err = errors.New("Some primary keys are missing: " + strings.Join(missed, ", "))
+		return
+	}
+	return
+}
+
+func DeleteFromTable(db fdb.Transactor, dbName string, ast *AstDelete, values []interface{}) (err error) {
+	if dbName == "" {
+		dbName = ast.Table.DatabaseName()
+	}
+	if dbName == "" {
+		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
+		return
+	}
+	_, err1 := GetTableScheme(db, dbName, ast.Table.TableName())
+	if err1 != nil {
+		err = err1
+		return
 	}
 	return
 }
