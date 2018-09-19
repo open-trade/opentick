@@ -15,8 +15,7 @@ var FdbVersion = 520
 var TableSchemeMap = sync.Map{}
 
 const (
-	UnknowDataType DataType = iota
-	TinyInt
+	TinyInt DataType = iota
 	SmallInt
 	Int
 	BigInt
@@ -254,10 +253,6 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 		}
 		i := len(m)
 		t := parseDataType(*f.Type)
-		if t == UnknowDataType {
-			err = errors.New("Unknown type " + *f.Type)
-			return
-		}
 		m[*f.Name] = typeTuple{uint32(i), t}
 		tbl.Cols = append(tbl.Cols, NewTableColDef(*f.Name, t))
 	}
@@ -322,7 +317,7 @@ func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
 	return
 }
 
-func parseDataType(typeStr string) DataType {
+func parseDataType(typeStr string) (d DataType) {
 	switch strings.ToUpper(typeStr) {
 	case "TINYINT":
 		return TinyInt
@@ -343,7 +338,7 @@ func parseDataType(typeStr string) DataType {
 	case "TEXT":
 		return Text
 	}
-	return UnknowDataType
+	return
 }
 
 func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl TableScheme, err error) {

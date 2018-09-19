@@ -3,6 +3,7 @@ package opentick
 import (
 	"github.com/alecthomas/participle"
 	"github.com/alecthomas/participle/lexer"
+	"strconv"
 )
 
 var (
@@ -107,6 +108,24 @@ type AstCondition struct {
 	LHS      *string   `@Ident`
 	Operator *string   `@("<=" | ">=" | "=" | "<" | ">")`
 	RHS      *AstValue `@@`
+}
+
+func (self *AstValue) TypeValue() (t string, v string) {
+	if self.Number != nil {
+		return "Number", strconv.FormatFloat(*self.Number, 'f', -1, 64)
+	}
+	if self.String != nil {
+		return "String", *self.String
+	}
+	if self.Boolean != nil {
+		if *self.Boolean {
+			v = "true"
+		} else {
+			v = "false"
+		}
+		return "Boolean", v
+	}
+	return
 }
 
 type AstValue struct {

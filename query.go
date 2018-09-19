@@ -70,10 +70,42 @@ func DeleteFromTable(db fdb.Transactor, dbName string, ast *AstDelete, values []
 		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
 		return
 	}
-	_, err1 := GetTableScheme(db, dbName, ast.Table.TableName())
+	scheme, err1 := GetTableScheme(db, dbName, ast.Table.TableName())
 	if err1 != nil {
 		err = err1
 		return
+	}
+	err = resolveWhere(&scheme, ast.Where)
+	return
+}
+
+func resolveWhere(scheme *TableScheme, where *AstExpression) (err error) {
+	for _, condition := range where.And {
+		col, ok := scheme.NameMap[*condition.LHS]
+		if !ok {
+			err = errors.New("Undefined column name " + *condition.LHS)
+			return
+		}
+		switch col.Type {
+		case TinyInt:
+		case SmallInt:
+		case Int:
+		case BigInt:
+		case Double:
+		case Float:
+		case Timestamp:
+		case Boolean:
+			if *condition.Operator != "=" {
+				err = errors.New("Invalid operator (" + *condition.Operator + ") for \"" + col.Name + "\" of type Boolean")
+				return
+			}
+			if condition.RHS.Boolean == nil {
+				t, v := condition.RHS.TypeValue()
+				err = errors.New("Invalid " + t + " constant (" + v + ") for \"" + col.Name + "\" of type Boolean")
+				return
+			}
+		case Text:
+		}
 	}
 	return
 }
