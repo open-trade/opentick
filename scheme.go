@@ -195,7 +195,7 @@ func (self *TableScheme) encode() []byte {
 	return out
 }
 
-func decodeTableScheme(bytes []byte) TableScheme {
+func decodeTableScheme(bytes []byte) *TableScheme {
 	v := binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
 	n := binary.BigEndian.Uint32(bytes)
@@ -215,7 +215,7 @@ func decodeTableScheme(bytes []byte) TableScheme {
 	tbl.Cols = cols
 	tbl.Keys = keys
 	tbl.fill()
-	return tbl
+	return &tbl
 }
 
 func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err error) {
@@ -352,11 +352,11 @@ func parseDataType(typeStr string) (d DataType) {
 	return
 }
 
-func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl TableScheme, err error) {
+func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl *TableScheme, err error) {
 	fullName := dbName + "." + tblName
 	tmp, _ := TableSchemeMap.Load(fullName)
 	if tmp != nil {
-		tbl = tmp.(TableScheme)
+		tbl = tmp.(*TableScheme)
 		return
 	}
 	dirTable, dirScheme, err1 := openTable(db, dbName, tblName)

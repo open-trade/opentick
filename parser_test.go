@@ -8,7 +8,7 @@ import (
 )
 
 var sqlSelectStmt = "select a, b from test where a > 1.2 and b < 2 limit -2"
-var sqlInsertStmt = "INSERT into x(x, y) values(1, 2)"
+var sqlInsertStmt = "INSERT into x(x, y) values(1., ?)"
 var sqlInsertAst = `
 &opentick.Ast{
   Insert: &opentick.AstInsert{
@@ -22,13 +22,11 @@ var sqlInsertAst = `
     Values: []opentick.AstValue{
       opentick.AstValue{
         Number: &opentick.AstNumber{
-          Int: &1,
+          Float: &1,
         },
       },
       opentick.AstValue{
-        Number: &opentick.AstNumber{
-          Int: &2,
-        },
+        Placeholder: &"?",
       },
     },
   },
@@ -74,16 +72,17 @@ var sqlSelectAst = `
 `
 
 func Test_Parse(t *testing.T) {
-	expr, err := Parse(sqlSelectStmt)
-	assert.Equal(t, strings.TrimSpace(sqlSelectAst), repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)))
-	assert.Equal(t, err, nil)
-	expr, err = Parse(sqlInsertStmt)
-	assert.Equal(t, strings.TrimSpace(sqlInsertAst), repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)))
+	stmt, err := Parse(sqlSelectStmt)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, strings.TrimSpace(sqlSelectAst), repr.String(stmt, repr.Indent("  "), repr.OmitEmpty(true)))
+	stmt, err = Parse(sqlInsertStmt)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, strings.TrimSpace(sqlInsertAst), repr.String(stmt, repr.Indent("  "), repr.OmitEmpty(true)))
 }
 
 func Benchmark_Parse(b *testing.B) {
 	b.StartTimer()
-	for i := 0; i < b.N; i++ { //use b.N for looping
+	for i := 0; i < b.N; i++ {
 		_, err := Parse(sqlSelectStmt)
 		if err != nil {
 			b.Fatal(err)
@@ -106,8 +105,8 @@ func Test_CreateTableSql(t *testing.T) {
 	)
   `
 	_, err := Parse(sqlCreateTable1)
-	assert.Equal(t, err, nil)
+	assert.Equal(t, nil, err)
 
 	_, err = Parse("create table test.test(x x)")
-	assert.NotEqual(t, err, nil)
+	assert.NotEqual(t, nil, err)
 }

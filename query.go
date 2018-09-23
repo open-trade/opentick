@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func InsertIntoTable(db fdb.Transactor, dbName string, ast *AstInsert, values []interface{}) (err error) {
+func ResolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
 	if dbName == "" {
 		dbName = ast.Table.DatabaseName()
 	}
@@ -18,55 +18,57 @@ func InsertIntoTable(db fdb.Transactor, dbName string, ast *AstInsert, values []
 		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
 		return
 	}
-	scheme, err1 := GetTableScheme(db, dbName, ast.Table.TableName())
-	if err1 != nil {
-		err = err1
+	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+	scheme := stmt.Scheme
+	if err != nil {
 		return
 	}
-	iKeys := make([]int, len(scheme.Keys))
-	for i := range iKeys {
-		iKeys[i] = -1
+	if len(ast.Cols) != len(ast.Values) {
+		err = errors.New("Unmatched column names/values")
+		return
 	}
-	iValues := make([]int, len(scheme.Values))
-	for i := range iValues {
-		iValues[i] = -1
-	}
-	nKeys := 0
-	for i, colName := range ast.Cols {
+	stmt.Values = make([]interface{}, len(scheme.Cols))
+	for j, colName := range ast.Cols {
 		col, ok := scheme.NameMap[colName]
 		if !ok {
 			err = errors.New("Undefined column name " + colName)
 			return
 		}
-		if col.IsKey {
-			if iKeys[col.Pos] >= 0 {
-				err = errors.New("Duplicate column name " + colName)
-				return
-			}
-			nKeys++
-			iKeys[col.Pos] = i
-		} else {
-			if iValues[col.Pos] >= 0 {
-				err = errors.New("Duplicate column name " + colName)
-				return
-			}
-			iValues[col.Pos] = i
+		i := col.PosCol
+		if stmt.Values[i] != nil {
+			err = errors.New("Duplicate column name " + colName)
+			return
+		}
+		if ast.Values[j].Placeholder != nil {
+			stmt.Values[i] = placeholder(stmt.NumPlaceholders)
+			stmt.NumPlaceholders++
+			continue
+		}
+		stmt.Values[i], err = validValue(col, ast.Values[j].Value())
+		if err != nil {
+			return
 		}
 	}
-	if nKeys < len(iKeys) {
-		var missed []string
-		for i, v := range iKeys {
-			if v < 0 {
-				missed = append(missed, scheme.Keys[i].Name)
-			}
+	var missed []string
+	for _, col := range scheme.Keys {
+		if stmt.Values[col.PosCol] == nil {
+			missed = append(missed, col.Name)
 		}
+	}
+	if missed != nil {
 		err = errors.New("Some primary keys are missing: " + strings.Join(missed, ", "))
 		return
 	}
 	return
 }
 
-func DeleteFromTable(db fdb.Transactor, dbName string, ast *AstDelete, values []interface{}) (err error) {
+type insertStmt struct {
+	Scheme          *TableScheme
+	Values          []interface{}
+	NumPlaceholders int
+}
+
+func ResolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
 	if dbName == "" {
 		dbName = ast.Table.DatabaseName()
 	}
@@ -74,28 +76,37 @@ func DeleteFromTable(db fdb.Transactor, dbName string, ast *AstDelete, values []
 		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
 		return
 	}
-	scheme, err1 := GetTableScheme(db, dbName, ast.Table.TableName())
-	if err1 != nil {
-		err = err1
+	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+	if err != nil {
 		return
 	}
-	_, err2 := resolveWhere(&scheme, ast.Where)
-	if err2 != nil {
-		err = err2
-		return
-	}
+	stmt.Conds, stmt.NumPlaceholders, err = resolveWhere(stmt.Scheme, ast.Where)
 	return
 }
 
-type placeholder bool
+type deleteStmt struct {
+	Scheme          *TableScheme
+	Conds           []condition
+	NumPlaceholders int
+}
+
+type placeholder int
 
 type condition struct {
 	Equal interface{}
-	Upper [2]interface{}
-	Lower [2]interface{}
+	End   [2]interface{}
+	Start [2]interface{}
 }
 
-func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, err error) {
+func (self *condition) IsEmpty() bool {
+	return self.Equal == nil && self.End[0] == nil && self.Start[0] == nil
+}
+
+func (self *condition) IsRange() bool {
+	return self.End[0] != nil || self.Start[0] != nil
+}
+
+func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, numPlaceholder int, err error) {
 	conds = make([]condition, len(scheme.Keys))
 	for _, cond := range where.And {
 		col, ok := scheme.NameMap[*cond.LHS]
@@ -114,26 +125,68 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 		}
 		var rhs interface{}
 		if cond.RHS.Placeholder != nil {
-			rhs = placeholder(true)
+			rhs = placeholder(numPlaceholder)
+			numPlaceholder++
 		} else {
 			rhs, err = validValue(col, cond.RHS.Value())
 			if err != nil {
 				return
 			}
 		}
+		if conds[col.Pos].Equal != nil {
+			err = errors.New(col.Name + " cannot be restricted by more than one relation if it includes an Equal")
+			return
+		}
 		switch op {
 		case "=":
+			if conds[col.Pos].IsRange() {
+				err = errors.New(col.Name + " cannot be restricted by more than one relation if it includes an Equal")
+				return
+			}
 			conds[col.Pos].Equal = rhs
 		case "<":
-			conds[col.Pos].Lower[0] = rhs
+			if conds[col.Pos].End[0] != nil {
+				err = errors.New("More than one restriction was found for the end bound on " + col.Name)
+				return
+			}
+			conds[col.Pos].End[0] = rhs
 		case "<=":
-			conds[col.Pos].Lower[0] = rhs
-			conds[col.Pos].Lower[1] = true
+			if conds[col.Pos].End[0] != nil {
+				err = errors.New("More than one restriction was found for the end bound on " + col.Name)
+				return
+			}
+			conds[col.Pos].End[0] = rhs
+			conds[col.Pos].End[1] = true
 		case ">":
-			conds[col.Pos].Upper[0] = rhs
+			if conds[col.Pos].Start[0] != nil {
+				err = errors.New("More than one restriction was found for the start bound on " + col.Name)
+				return
+			}
+			conds[col.Pos].Start[0] = rhs
 		case ">=":
-			conds[col.Pos].Upper[0] = rhs
-			conds[col.Pos].Upper[1] = true
+			if conds[col.Pos].Start[0] != nil {
+				err = errors.New("More than one restriction was found for the start bound on " + col.Name)
+				return
+			}
+			conds[col.Pos].Start[0] = rhs
+			conds[col.Pos].Start[1] = true
+		}
+	}
+	hasRange := false
+	hasEmpty := false
+	for i := range conds {
+		isRange := conds[i].IsRange()
+		isEmpty := conds[i].IsEmpty()
+		if !isEmpty {
+			if hasEmpty || hasRange {
+				err = errors.New("Cannot execute this query as it might involve data filtering and thus may have unpredictable performance")
+				return
+			}
+		} else {
+			hasEmpty = true
+		}
+		if isRange {
+			hasRange = true
 		}
 	}
 	return

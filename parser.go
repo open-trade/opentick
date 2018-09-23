@@ -10,7 +10,7 @@ var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
 		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT)\b)` +
 		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
-		`|(?P<Number>-?\d*\.?\d+([eE][-+]?\d+)?)` +
+		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
 		`|(?P<Operator><=|>=|[-+*/%,.()=<>?])`,
 	))
@@ -129,7 +129,7 @@ type AstCondition struct {
 type AstValue struct {
 	Number      *AstNumber  `@Number`
 	String      *string     `| @String`
-	Placeholder *string     `| "?"`
+	Placeholder *string     `| @"?"`
 	Boolean     *AstBoolean `| @("TRUE" | "FALSE")`
 }
 
