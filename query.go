@@ -10,15 +10,8 @@ import (
 	"time"
 )
 
-func ResolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
-	if dbName == "" {
-		dbName = ast.Table.DatabaseName()
-	}
-	if dbName == "" {
-		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
-		return
-	}
-	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
+	stmt.Scheme, err = getTableScheme(db, dbName, ast.Table)
 	scheme := stmt.Scheme
 	if err != nil {
 		return
@@ -56,15 +49,8 @@ type selectStmt struct {
 	NumPlaceholders uint32
 }
 
-func ResolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
-	if dbName == "" {
-		dbName = ast.Table.DatabaseName()
-	}
-	if dbName == "" {
-		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
-		return
-	}
-	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
+	stmt.Scheme, err = getTableScheme(db, dbName, ast.Table)
 	scheme := stmt.Scheme
 	if err != nil {
 		return
@@ -114,15 +100,8 @@ type insertStmt struct {
 	NumPlaceholders uint32
 }
 
-func ResolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
-	if dbName == "" {
-		dbName = ast.Table.DatabaseName()
-	}
-	if dbName == "" {
-		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
-		return
-	}
-	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
+	stmt.Scheme, err = getTableScheme(db, dbName, ast.Table)
 	if err != nil {
 		return
 	}
@@ -329,5 +308,17 @@ func validValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 	}
 hasError:
 	err = errors.New("Invalid " + fmt.Sprint(reflect.TypeOf(v)) + " value (" + fmt.Sprint(v) + ") for \"" + col.Name + "\" of " + col.Type.Name())
+	return
+}
+
+func getTableScheme(db fdb.Transactor, dbName string, table *AstTableName) (scheme *TableScheme, err error) {
+	if dbName == "" {
+		dbName = table.DatabaseName()
+	}
+	if dbName == "" {
+		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
+		return
+	}
+	scheme, err = GetTableScheme(db, dbName, table.TableName())
 	return
 }
