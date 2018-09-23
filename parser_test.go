@@ -41,7 +41,7 @@ var sqlSelectAst = `
         "b",
       },
     },
-    From: &opentick.AstTableName{
+    Table: &opentick.AstTableName{
       A: &"test",
     },
     Where: &opentick.AstExpression{

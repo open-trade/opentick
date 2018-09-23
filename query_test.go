@@ -13,6 +13,17 @@ func Test_Query(t *testing.T) {
 	CreateDatabase(db, "test")
 	ast, _ := Parse("create table test.test(a int, b int, b2 boolean, c int, d double, e bigint, primary key(a, b, b2, c))")
 	err := CreateTable(db, "", ast.Create.Table)
+	ast, _ = Parse("select a, b, b from test.test where a=1")
+	_, err = ResolveSelect(db, "", ast.Select)
+	assert.Equal(t, "Duplicate column name b", err.Error())
+	ast, _ = Parse("select * from test.test where a=1")
+	stmt1, err1 := ResolveSelect(db, "", ast.Select)
+	assert.Equal(t, nil, err1)
+	assert.Equal(t, true, stmt1.Cols == nil)
+	ast, _ = Parse("select a, b from test.test where a=1")
+	stmt1, err1 = ResolveSelect(db, "", ast.Select)
+	assert.Equal(t, "b", stmt1.Cols[1].Name)
+	assert.Equal(t, 2, len(stmt1.Cols))
 	ast, _ = Parse("insert into test.test(a) values(1)")
 	_, err = ResolveInsert(db, "", ast.Insert)
 	assert.Equal(t, "Some primary keys are missing: b, b2, c", err.Error())
@@ -53,10 +64,10 @@ func Test_Query(t *testing.T) {
 	_, err = ResolveDelete(db, "", ast.Delete)
 	assert.Equal(t, "Cannot execute this query as it might involve data filtering and thus may have unpredictable performance", err.Error())
 	ast, _ = Parse("delete from test.test where a=2 and b=2 and b2=?")
-	stmt, err1 := ResolveDelete(db, "", ast.Delete)
-	assert.Equal(t, nil, err1)
-	assert.Equal(t, 1, stmt.NumPlaceholders)
-	assert.Equal(t, 4, len(stmt.Scheme.Keys))
+	stmt2, err2 := ResolveDelete(db, "", ast.Delete)
+	assert.Equal(t, nil, err2)
+	assert.Equal(t, uint32(1), stmt2.NumPlaceholders)
+	assert.Equal(t, 4, len(stmt2.Scheme.Keys))
 }
 
 func Benchmark_ResolveDelete(b *testing.B) {
@@ -89,6 +100,24 @@ func Benchmark_ResolveInsert(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := ResolveInsert(db, "", ast.Insert)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func Benchmark_ResolveSelect(b *testing.B) {
+	b.StopTimer()
+	fdb.MustAPIVersion(FdbVersion)
+	var db = fdb.MustOpenDefault()
+	DropDatabase(db, "test")
+	CreateDatabase(db, "test")
+	ast, _ := Parse("create table test.test(a int, b int, c int, d double, e bigint, primary key(a, b, c))")
+	CreateTable(db, "", ast.Create.Table)
+	ast, _ = Parse("select a, b, c, d from test.test where a=1 and b=2 and c<2 and c>1")
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := ResolveSelect(db, "", ast.Select)
 		if err != nil {
 			b.Fatal(err)
 		}

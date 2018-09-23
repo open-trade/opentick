@@ -10,6 +10,52 @@ import (
 	"time"
 )
 
+func ResolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
+	if dbName == "" {
+		dbName = ast.Table.DatabaseName()
+	}
+	if dbName == "" {
+		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
+		return
+	}
+	stmt.Scheme, err = GetTableScheme(db, dbName, ast.Table.TableName())
+	scheme := stmt.Scheme
+	if err != nil {
+		return
+	}
+	stmt.Conds, stmt.NumPlaceholders, err = resolveWhere(stmt.Scheme, ast.Where)
+	if err != nil {
+		return
+	}
+	if ast.Selected.All != nil {
+		return
+	}
+	used := make([]bool, len(scheme.Cols))
+	stmt.Cols = make([]*TableColDef, len(ast.Selected.Cols))
+	for j, colName := range ast.Selected.Cols {
+		col, ok := scheme.NameMap[colName]
+		if !ok {
+			err = errors.New("Undefined column name " + colName)
+			return
+		}
+		i := col.PosCol
+		if used[i] {
+			err = errors.New("Duplicate column name " + colName)
+			return
+		}
+		used[i] = true
+		stmt.Cols[j] = col
+	}
+	return
+}
+
+type selectStmt struct {
+	Scheme          *TableScheme
+	Conds           []condition    // len(Scheme.Keys)
+	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
+	NumPlaceholders uint32
+}
+
 func ResolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
 	if dbName == "" {
 		dbName = ast.Table.DatabaseName()
@@ -64,8 +110,8 @@ func ResolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt inser
 
 type insertStmt struct {
 	Scheme          *TableScheme
-	Values          []interface{}
-	NumPlaceholders int
+	Values          []interface{} // len(Scheme.Cols)
+	NumPlaceholders uint32
 }
 
 func ResolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
@@ -86,11 +132,11 @@ func ResolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt delet
 
 type deleteStmt struct {
 	Scheme          *TableScheme
-	Conds           []condition
-	NumPlaceholders int
+	Conds           []condition // len(Scheme.Keys)
+	NumPlaceholders uint32
 }
 
-type placeholder int
+type placeholder uint32
 
 type condition struct {
 	Equal interface{}
@@ -106,7 +152,7 @@ func (self *condition) IsRange() bool {
 	return self.End[0] != nil || self.Start[0] != nil
 }
 
-func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, numPlaceholder int, err error) {
+func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, numPlaceholder uint32, err error) {
 	conds = make([]condition, len(scheme.Keys))
 	for _, cond := range where.And {
 		col, ok := scheme.NameMap[*cond.LHS]
@@ -256,7 +302,7 @@ func validValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 				dt.Second = v1
 			} else {
 				dt.Second = v1 >> 32
-				dt.Nanosecond = int(v1 & 0xFFFFFFFF)
+				dt.Nanosecond = uint32(v1 & 0xFFFFFFFF)
 			}
 			ret = dt
 			return
@@ -270,7 +316,7 @@ func validValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 			goto hasError
 		}
 		dt.Second = time1.Unix()
-		dt.Nanosecond = time1.Nanosecond()
+		dt.Nanosecond = uint32(time1.Nanosecond())
 		ret = dt
 		return
 	case Text:

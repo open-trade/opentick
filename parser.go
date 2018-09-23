@@ -106,7 +106,7 @@ func (self *AstTableName) DatabaseName() string {
 
 type AstSelect struct {
 	Selected *AstSelectExpression `@@`
-	From     *AstTableName        `"FROM" @@`
+	Table    *AstTableName        `"FROM" @@`
 	Where    *AstExpression       `["WHERE" @@]`
 	Limit    *int64               `["LIMIT" @Number]`
 }
