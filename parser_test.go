@@ -21,10 +21,14 @@ var sqlInsertAst = `
     },
     Values: []opentick.AstValue{
       opentick.AstValue{
-        Number: &1,
+        Number: &opentick.AstNumber{
+          Int: &1,
+        },
       },
       opentick.AstValue{
-        Number: &2,
+        Number: &opentick.AstNumber{
+          Int: &2,
+        },
       },
     },
   },
@@ -48,14 +52,18 @@ var sqlSelectAst = `
           LHS: &"a",
           Operator: &">",
           RHS: &opentick.AstValue{
-            Number: &1.2,
+            Number: &opentick.AstNumber{
+              Float: &1.2,
+            },
           },
         },
         opentick.AstCondition{
           LHS: &"b",
           Operator: &"<",
           RHS: &opentick.AstValue{
-            Number: &2,
+            Number: &opentick.AstNumber{
+              Int: &2,
+            },
           },
         },
       },
@@ -67,10 +75,10 @@ var sqlSelectAst = `
 
 func Test_Parse(t *testing.T) {
 	expr, err := Parse(sqlSelectStmt)
-	assert.Equal(t, repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)), strings.TrimSpace(sqlSelectAst))
+	assert.Equal(t, strings.TrimSpace(sqlSelectAst), repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)))
 	assert.Equal(t, err, nil)
 	expr, err = Parse(sqlInsertStmt)
-	assert.Equal(t, repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)), strings.TrimSpace(sqlInsertAst))
+	assert.Equal(t, strings.TrimSpace(sqlInsertAst), repr.String(expr, repr.Indent("  "), repr.OmitEmpty(true)))
 }
 
 func Benchmark_Parse(b *testing.B) {

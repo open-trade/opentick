@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func Test_InsertIntoTable(t *testing.T) {
+func Test_Query(t *testing.T) {
 	fdb.MustAPIVersion(FdbVersion)
 	var db = fdb.MustOpenDefault()
 	DropDatabase(db, "test")
@@ -19,4 +19,7 @@ func Test_InsertIntoTable(t *testing.T) {
 	ast, _ = Parse("insert into test.test(a, a, c) values(1, 1)")
 	err = InsertIntoTable(db, "", ast.Insert, nil)
 	assert.Equal(t, err.Error(), "Duplicate column name a")
+	ast, _ = Parse("delete from test.test where d=1")
+	err = DeleteFromTable(db, "", ast.Delete, nil)
+	assert.Equal(t, err.Error(), "Invalid column d in where clause, only primary key can be used")
 }

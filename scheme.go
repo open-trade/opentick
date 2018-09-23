@@ -26,6 +26,17 @@ const (
 	Text
 )
 
+type Datetime struct {
+	Second     int64 // time.Unix()
+	Nanosecond int   // [0, 999999999]
+}
+
+var typeNames = []string{"TinyInt", "SmallInt", "Int", "BigInt", "Double", "Float", "Timestamp", "Boolean", "Text"}
+
+func (self *DataType) Name() string {
+	return typeNames[int(*self)]
+}
+
 func CreateDatabase(db fdb.Transactor, dbName string) (err error) {
 	path := []string{"db", dbName}
 	exists, err1 := directory.Exists(db, path)

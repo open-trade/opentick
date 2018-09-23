@@ -24,8 +24,24 @@ var (
 
 type AstBoolean bool
 
-func (b *AstBoolean) Capture(values []string) error {
-	*b = values[0] == "TRUE"
+func (self *AstBoolean) Capture(values []string) error {
+	*self = values[0] == "TRUE"
+	return nil
+}
+
+type AstNumber struct {
+	Float *float64
+	Int   *int64
+}
+
+func (self *AstNumber) Capture(values []string) error {
+	v1, err := strconv.ParseInt(values[0], 10, 64)
+	if err == nil {
+		self.Int = &v1
+	} else {
+		v2, _ := strconv.ParseFloat(values[0], 64)
+		self.Float = &v2
+	}
 	return nil
 }
 
@@ -110,29 +126,27 @@ type AstCondition struct {
 	RHS      *AstValue `@@`
 }
 
-func (self *AstValue) TypeValue() (t string, v string) {
-	if self.Number != nil {
-		return "Number", strconv.FormatFloat(*self.Number, 'f', -1, 64)
-	}
-	if self.String != nil {
-		return "String", *self.String
-	}
-	if self.Boolean != nil {
-		if *self.Boolean {
-			v = "true"
-		} else {
-			v = "false"
-		}
-		return "Boolean", v
-	}
-	return
-}
-
 type AstValue struct {
-	Number      *float64    `@Number`
+	Number      *AstNumber  `@Number`
 	String      *string     `| @String`
 	Placeholder *string     `| "?"`
 	Boolean     *AstBoolean `| @("TRUE" | "FALSE")`
+}
+
+func (self *AstValue) Value() interface{} {
+	if self.Number != nil {
+		if self.Number.Int != nil {
+			return *self.Number.Int
+		}
+		return *self.Number.Float
+	}
+	if self.String != nil {
+		return *self.String
+	}
+	if self.Boolean != nil {
+		return *self.Boolean
+	}
+	return nil
 }
 
 func Parse(sql string) (*Ast, error) {
