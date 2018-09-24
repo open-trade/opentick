@@ -6,9 +6,103 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
+
+func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (res [][]interface{}, err error) {
+	ast, err1 := Parse(sql)
+	if err1 != nil {
+		return nil, err1
+	}
+	if ast.Create != nil {
+		if ast.Create.Database != nil {
+			err = CreateDatabase(db, *ast.Create.Database)
+		} else if ast.Create.Table != nil {
+			err = CreateTable(db, dbName, ast.Create.Table)
+		}
+	} else if ast.Drop != nil {
+		if ast.Drop.Database != nil {
+			err = DropDatabase(db, *ast.Drop.Database)
+		} else if ast.Drop.Table != nil {
+			if dbName == "" {
+				dbName = ast.Drop.Table.DatabaseName()
+			}
+			err = DropTable(db, dbName, ast.Drop.Table.TableName())
+		}
+	} else if ast.Select != nil {
+		stmt, err1 := resolveSelect(db, dbName, ast.Select)
+		if err1 != nil {
+			return nil, err1
+		}
+		res, err = executeSelect(db, &stmt, args)
+	} else if ast.Insert != nil {
+		stmt, err1 := resolveInsert(db, dbName, ast.Insert)
+		if err1 != nil {
+			return nil, err1
+		}
+		err = executeInsert(db, &stmt, args)
+	} else if ast.Delete != nil {
+		stmt, err1 := resolveDelete(db, dbName, ast.Delete)
+		if err1 != nil {
+			return nil, err1
+		}
+		err = executeDelete(db, &stmt, args)
+	}
+	return
+}
+
+func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res [][]interface{}, err error) {
+	if stmt.NumPlaceholders != len(args) {
+		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
+		return
+	}
+	conds := stmt.Conds
+	if len(args) > 0 {
+		conds, err = validateConditionArgs(stmt.Scheme, conds, args)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err error) {
+	if stmt.NumPlaceholders != len(args) {
+		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
+		return
+	}
+	values := stmt.Values
+	if len(args) > 0 {
+		values = make([]interface{}, len(stmt.Values))
+		copy(values, stmt.Values)
+		for i := range values {
+			if p, ok := values[i].(placeholder); ok {
+				values[i], err = validateValue(&stmt.Scheme.Cols[i], args[int(p)])
+				if err != nil {
+					return
+				}
+			}
+		}
+	}
+	return
+}
+
+func executeDelete(db fdb.Transactor, stmt *deleteStmt, args []interface{}) (err error) {
+	if stmt.NumPlaceholders != len(args) {
+		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
+		return
+	}
+	conds := stmt.Conds
+	if len(args) > 0 {
+		conds, err = validateConditionArgs(stmt.Scheme, conds, args)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
 
 func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
 	stmt.Scheme, err = getTableScheme(db, dbName, ast.Table)
@@ -46,7 +140,7 @@ type selectStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition    // len(Scheme.Keys)
 	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
-	NumPlaceholders uint32
+	NumPlaceholders int
 }
 
 func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
@@ -76,7 +170,7 @@ func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt inser
 			stmt.NumPlaceholders++
 			continue
 		}
-		stmt.Values[i], err = validValue(col, ast.Values[j].Value())
+		stmt.Values[i], err = validateValue(col, ast.Values[j].Value())
 		if err != nil {
 			return
 		}
@@ -97,7 +191,7 @@ func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt inser
 type insertStmt struct {
 	Scheme          *TableScheme
 	Values          []interface{} // len(Scheme.Cols)
-	NumPlaceholders uint32
+	NumPlaceholders int
 }
 
 func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
@@ -112,10 +206,10 @@ func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt delet
 type deleteStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition // len(Scheme.Keys)
-	NumPlaceholders uint32
+	NumPlaceholders int
 }
 
-type placeholder uint32
+type placeholder int
 
 type condition struct {
 	Equal interface{}
@@ -131,7 +225,7 @@ func (self *condition) IsRange() bool {
 	return self.End[0] != nil || self.Start[0] != nil
 }
 
-func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, numPlaceholder uint32, err error) {
+func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition, numPlaceholder int, err error) {
 	conds = make([]condition, len(scheme.Keys))
 	for _, cond := range where.And {
 		col, ok := scheme.NameMap[*cond.LHS]
@@ -153,7 +247,7 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 			rhs = placeholder(numPlaceholder)
 			numPlaceholder++
 		} else {
-			rhs, err = validValue(col, cond.RHS.Value())
+			rhs, err = validateValue(col, cond.RHS.Value())
 			if err != nil {
 				return
 			}
@@ -217,11 +311,16 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 	return
 }
 
-func validValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
+func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 	switch col.Type {
 	case TinyInt, SmallInt, Int, BigInt:
-		v1, ok := v.(int64)
-		if !ok {
+		var v1 int64
+		switch v.(type) {
+		case int64:
+			v1 = v.(int64)
+		case int:
+			v1 = int64(v.(int))
+		default:
 			goto hasError
 		}
 		switch col.Type {
@@ -254,8 +353,15 @@ func validValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 			return
 		}
 	case Double, Float:
-		v1, ok := v.(float64)
-		if !ok {
+		var v1 float64
+		switch v.(type) {
+		case int64:
+			v1 = float64(v.(int64))
+		case int:
+			v1 = float64(v.(int))
+		case float64:
+			v1 = v.(float64)
+		default:
 			goto hasError
 		}
 		switch col.Type {
@@ -320,5 +426,36 @@ func getTableScheme(db fdb.Transactor, dbName string, table *AstTableName) (sche
 		return
 	}
 	scheme, err = GetTableScheme(db, dbName, table.TableName())
+	return
+}
+
+func validateConditionArgs(scheme *TableScheme, origConds []condition, args []interface{}) (conds []condition, err error) {
+	conds = make([]condition, len(origConds))
+	copy(conds, origConds)
+	for i := range conds {
+		cond := &conds[i]
+		if cond.IsEmpty() {
+			break
+		}
+		col := scheme.Keys[i]
+		if p, ok := cond.Equal.(placeholder); ok {
+			cond.Equal, err = validateValue(col, args[int(p)])
+			if err != nil {
+				return
+			}
+		}
+		if p, ok := cond.Start[0].(placeholder); ok {
+			cond.Start[0], err = validateValue(col, args[int(p)])
+			if err != nil {
+				return
+			}
+		}
+		if p, ok := cond.End[0].(placeholder); ok {
+			cond.End[0], err = validateValue(col, args[int(p)])
+			if err != nil {
+				return
+			}
+		}
+	}
 	return
 }

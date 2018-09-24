@@ -144,7 +144,7 @@ func (self *AstValue) Value() interface{} {
 		return *self.String
 	}
 	if self.Boolean != nil {
-		return *self.Boolean
+		return (bool)(*self.Boolean)
 	}
 	return nil
 }
