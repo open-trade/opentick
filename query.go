@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"math"
 	"reflect"
 	"strconv"
@@ -86,6 +87,21 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 			}
 		}
 	}
+	var parts [2][]tuple.TupleElement
+	for i, cols := range [2]([]*TableColDef){stmt.Scheme.Keys, stmt.Scheme.Values} {
+		parts[i] = make([]tuple.TupleElement, len(cols))
+		for _, col := range cols {
+			v := values[col.PosCol]
+			if v2, ok := v.(Datetime); ok {
+				v = tuple.Tuple{v2.Second, v2.Nanosecond}
+			}
+			parts[i][col.Pos] = tuple.TupleElement(v)
+		}
+	}
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		tr.Set(stmt.Scheme.Dir.Pack(tuple.Tuple(parts[0])), tuple.Tuple(parts[1]).Pack())
+		return
+	})
 	return
 }
 
@@ -330,28 +346,21 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 			} else if v1 < math.MinInt8 {
 				v1 = math.MinInt8
 			}
-			ret = int8(v1)
-			return
 		case SmallInt:
 			if v1 > math.MaxInt16 {
 				v1 = math.MaxInt16
 			} else if v1 < math.MinInt16 {
 				v1 = math.MinInt16
 			}
-			ret = int16(v1)
-			return
 		case Int:
 			if v1 > math.MaxInt32 {
 				v1 = math.MaxInt32
 			} else if v1 < math.MinInt32 {
 				v1 = math.MinInt32
 			}
-			ret = int32(v1)
-			return
-		case BigInt:
-			ret = v1
-			return
 		}
+		ret = v1
+		return
 	case Double, Float:
 		var v1 float64
 		switch v.(type) {

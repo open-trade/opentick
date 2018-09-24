@@ -90,9 +90,13 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, "Invalid int value (1) for \"b2\" of Boolean", err.Error())
 	_, err = Execute(db, "", "insert into test.test(a, b, b2, c, d) values(1, 1, ?, ?, 1)", []interface{}{true, true})
 	assert.Equal(t, "Invalid bool value (true) for \"c\" of Int", err.Error())
+	_, err = Execute(db, "", "insert into test.test(a, b2) values(1, ?)", []interface{}{true})
+	assert.Equal(t, "Some primary keys are missing: b, c", err.Error())
 	_, err = Execute(db, "", "select * from test.test where a=1 and b=2 and b2=? and c<?", []interface{}{true, 1})
 	assert.Equal(t, nil, err)
 	_, err = Execute(db, "", "delete from test.test where a=1 and b=2 and b2=? and c<?", []interface{}{true, 1})
+	assert.Equal(t, nil, err)
+	_, err = Execute(db, "", "insert into test.test(a, b, b2, c, d) values(1, 1, ?, ?, 1)", []interface{}{true, 2})
 	assert.Equal(t, nil, err)
 }
 
