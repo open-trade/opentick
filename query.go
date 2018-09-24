@@ -154,7 +154,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 
 type selectStmt struct {
 	Scheme          *TableScheme
-	Conds           []condition    // len(Scheme.Keys)
+	Conds           []condition    // <= len(Scheme.Keys)
 	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
 	NumPlaceholders int
 }
@@ -221,7 +221,7 @@ func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt delet
 
 type deleteStmt struct {
 	Scheme          *TableScheme
-	Conds           []condition // len(Scheme.Keys)
+	Conds           []condition // <= len(Scheme.Keys)
 	NumPlaceholders int
 }
 
@@ -309,6 +309,7 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 	}
 	hasRange := false
 	hasEmpty := false
+	n := 0
 	for i := range conds {
 		isRange := conds[i].IsRange()
 		isEmpty := conds[i].IsEmpty()
@@ -317,6 +318,7 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 				err = errors.New("Cannot execute this query as it might involve data filtering and thus may have unpredictable performance")
 				return
 			}
+			n++
 		} else {
 			hasEmpty = true
 		}
@@ -324,6 +326,7 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 			hasRange = true
 		}
 	}
+	conds = conds[:n]
 	return
 }
 
@@ -443,9 +446,6 @@ func validateConditionArgs(scheme *TableScheme, origConds []condition, args []in
 	copy(conds, origConds)
 	for i := range conds {
 		cond := &conds[i]
-		if cond.IsEmpty() {
-			break
-		}
 		col := scheme.Keys[i]
 		if p, ok := cond.Equal.(placeholder); ok {
 			cond.Equal, err = validateValue(col, args[int(p)])
