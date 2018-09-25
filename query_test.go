@@ -19,7 +19,7 @@ func Test_Query(t *testing.T) {
 	ast, _ = Parse("select * from test.test where a=1")
 	stmt1, err1 := resolveSelect(db, "", ast.Select)
 	assert.Equal(t, nil, err1)
-	assert.Equal(t, true, stmt1.Cols == nil)
+	assert.Equal(t, 6, len(stmt1.Cols))
 	ast, _ = Parse("select a, b from test.test where a=1")
 	stmt1, err1 = resolveSelect(db, "", ast.Select)
 	assert.Equal(t, "b", stmt1.Cols[1].Name)
@@ -96,8 +96,11 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, nil, err)
 	_, err = Execute(db, "", "delete from test.test where a=1 and b=2 and b2=? and c<?", []interface{}{true, 1})
 	assert.Equal(t, nil, err)
-	_, err = Execute(db, "", "insert into test.test(a, b, b2, c, d) values(1, 1, ?, ?, 1)", []interface{}{true, 2})
+	_, err = Execute(db, "", "insert into test.test(a, b, b2, c, d, e) values(2, 1, true, 42, 2.2, 102)", nil)
 	assert.Equal(t, nil, err)
+	res, err1 := Execute(db, "", "select * from test.test where a=2 and b=1 and b2=? and c=?", []interface{}{true, 42})
+	assert.Equal(t, nil, err1)
+	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(42), 2.2, int64(102)}, res[0])
 }
 
 func Benchmark_resolveDelete(b *testing.B) {

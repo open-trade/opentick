@@ -110,7 +110,8 @@ type TableColDef struct {
 	Pos    uint32 // position in Key or Values
 }
 
-func NewTableColDef(name string, t DataType) (tbl TableColDef) {
+func NewTableColDef(name string, t DataType) (tbl *TableColDef) {
+	tbl = &TableColDef{}
 	tbl.Name = name
 	tbl.Type = t
 	return
@@ -138,18 +139,18 @@ func decodeTableColDef(bytes []byte, out *TableColDef, version uint32) []byte {
 }
 
 type TableScheme struct {
-	Cols    []TableColDef
+	Cols    []*TableColDef
 	Keys    []*TableColDef
 	Values  []*TableColDef
 	NameMap map[string]*TableColDef
 	Dir     directory.DirectorySubspace
 }
 
-func NewTableScheme(cols []TableColDef, keys []int) (tbl TableScheme) {
+func NewTableScheme(cols []*TableColDef, keys []int) (tbl TableScheme) {
 	tbl.Cols = cols
 	tbl.Keys = make([]*TableColDef, len(keys))
 	for i := range keys {
-		tbl.Keys[i] = &cols[keys[i]]
+		tbl.Keys[i] = cols[keys[i]]
 	}
 	tbl.fill()
 	return
@@ -163,8 +164,7 @@ func (self *TableScheme) fill() {
 	}
 	n := 0
 	self.NameMap = make(map[string]*TableColDef)
-	for i := range self.Cols {
-		col := &self.Cols[i]
+	for i, col := range self.Cols {
 		col.PosCol = uint32(i)
 		self.NameMap[col.Name] = col
 		if !col.IsKey {
@@ -200,15 +200,16 @@ func decodeTableScheme(bytes []byte) *TableScheme {
 	bytes = bytes[4:]
 	n := binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
-	cols := make([]TableColDef, n)
+	cols := make([]*TableColDef, n)
 	for i := uint32(0); i < n; i++ {
-		bytes = decodeTableColDef(bytes, &cols[i], v)
+		cols[i] = &TableColDef{}
+		bytes = decodeTableColDef(bytes, cols[i], v)
 	}
 	n = binary.BigEndian.Uint32(bytes)
 	bytes = bytes[4:]
 	keys := make([]*TableColDef, n)
 	for i := uint32(0); i < n; i++ {
-		keys[i] = &cols[int(binary.BigEndian.Uint32(bytes))]
+		keys[i] = cols[int(binary.BigEndian.Uint32(bytes))]
 		bytes = bytes[4:]
 	}
 	var tbl TableScheme
@@ -278,7 +279,7 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			return
 		}
 		has[k] = true
-		tbl.Keys = append(tbl.Keys, &tbl.Cols[m[k].i])
+		tbl.Keys = append(tbl.Keys, tbl.Cols[m[k].i])
 	}
 	if len(tbl.Keys) == 0 {
 		err = errors.New("PRIMARY KEY not declared")
@@ -364,13 +365,15 @@ func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl *Tabl
 		err = err1
 		return
 	}
-	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-		tbl = decodeTableScheme(tr.Get(dirScheme).MustGet())
+	ret, err1 := db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		ret = decodeTableScheme(tr.Get(dirScheme).MustGet())
 		return
 	})
-	if err != nil {
+	if err1 != nil {
+		err = err1
 		return
 	}
+	tbl = ret.(*TableScheme)
 	tbl.Dir = dirTable
 	TableSchemeMap.Store(fullName, tbl)
 	return

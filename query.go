@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"math"
 	"reflect"
@@ -66,6 +67,41 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			return
 		}
 	}
+	var sub subspace.Subspace
+	sub = stmt.Scheme.Dir
+	n := len(conds) - 1
+	if n > 0 {
+		for i := range conds[:n] {
+			sub = sub.Sub(conds[i].Equal)
+		}
+	}
+	c := &conds[n]
+	if c.Equal != nil && len(conds) == len(stmt.Scheme.Keys) {
+		out, err1 := db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+			ret = tr.Get(sub.Sub(c.Equal)).MustGet()
+			return
+		})
+		if err1 != nil {
+			err = err1
+			return
+		}
+		if out == nil {
+			return
+		}
+		value, err2 := tuple.Unpack(out.([]byte))
+		if err2 != nil {
+			err = err2
+			return
+		}
+		res = []([]interface{}){make([]interface{}, len(stmt.Cols))}
+		for i, col := range stmt.Cols {
+			if col.IsKey {
+				res[0][i] = conds[col.Pos].Equal
+			} else if int(col.Pos) < len(value) {
+				res[0][i] = value[col.Pos]
+			}
+		}
+	}
 	return
 }
 
@@ -80,7 +116,7 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 		copy(values, stmt.Values)
 		for i := range values {
 			if p, ok := values[i].(placeholder); ok {
-				values[i], err = validateValue(&stmt.Scheme.Cols[i], args[int(p)])
+				values[i], err = validateValue(stmt.Scheme.Cols[i], args[int(p)])
 				if err != nil {
 					return
 				}
@@ -131,6 +167,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		return
 	}
 	if ast.Selected.All != nil {
+		stmt.Cols = scheme.Cols
 		return
 	}
 	used := make([]bool, len(scheme.Cols))

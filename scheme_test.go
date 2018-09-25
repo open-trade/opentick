@@ -30,7 +30,7 @@ func Benchmark_DecodeTableColDef(b *testing.B) {
 	}
 }
 
-var cols = []TableColDef{d, d, d}
+var cols = []*TableColDef{NewTableColDef("Test", Double), NewTableColDef("Test", Double), NewTableColDef("Test", Double)}
 var tbl = NewTableScheme(cols, []int{2, 1})
 
 func Test_EncodeTableScheme(t *testing.T) {
