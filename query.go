@@ -56,29 +56,14 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 }
 
 func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res [][]interface{}, err error) {
-	if stmt.NumPlaceholders != len(args) {
-		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
+	sel, conds, err1 := executeWhere(db, stmt, args)
+	if err1 != nil {
+		err = err1
 		return
 	}
-	conds := stmt.Conds
-	if len(args) > 0 {
-		conds, err = validateConditionArgs(stmt.Scheme, conds, args)
-		if err != nil {
-			return
-		}
-	}
-	var sub subspace.Subspace
-	sub = stmt.Scheme.Dir
-	n := len(conds) - 1
-	if n > 0 {
-		for i := range conds[:n] {
-			sub = sub.Sub(conds[i].Equal)
-		}
-	}
-	c := &conds[n]
-	if c.Equal != nil && len(conds) == len(stmt.Scheme.Keys) {
+	if bytes, ok := sel.([]byte); ok {
 		tmp, err1 := db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-			ret = tr.Get(sub.Sub(c.Equal)).MustGet()
+			ret = tr.Get(fdb.Key(bytes)).MustGet()
 			return
 		})
 		if err1 != nil {
@@ -103,38 +88,12 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 		}
 		return
 	}
-	sr := fdb.SelectorRange{}
-	if c.Equal != nil {
-		a, b := sub.Sub(c.Equal).FDBRangeKeySelectors()
-		sr.Begin = a
-		sr.End = b
-	} else {
-		if c.Start[0] != nil {
-			k := sub.Sub(c.Start[0])
-			if c.Start[1] == nil {
-				sr.Begin = fdb.FirstGreaterThan(k)
-			} else {
-				sr.Begin = fdb.FirstGreaterOrEqual(k)
-			}
-		} else {
-			sr.Begin = fdb.FirstGreaterOrEqual(fdb.Key(append(sub.Bytes(), 0x00)))
-		}
-		if c.End[0] != nil {
-			k := sub.Sub(c.End[0])
-			if c.End[1] == nil {
-				sr.End = fdb.FirstGreaterOrEqual(k)
-			} else {
-				sr.End = fdb.FirstGreaterThan(k)
-			}
-		} else {
-			sr.End = fdb.FirstGreaterOrEqual(fdb.Key(append(sub.Bytes(), 0xFF)))
-		}
-	}
-	tmp, err1 := db.Transact(func(tr fdb.Transaction) (interface{}, error) {
-		return tr.GetRange(sr, fdb.RangeOptions{Limit: stmt.Limit, Reverse: stmt.Reverse}).GetSliceWithError()
+	kr := sel.(fdb.KeyRange)
+	tmp, err2 := db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+		return tr.GetRange(kr, fdb.RangeOptions{Limit: stmt.Limit, Reverse: stmt.Reverse}).GetSliceWithError()
 	})
-	if err1 != nil {
-		err = err1
+	if err2 != nil {
+		err = err2
 		return
 	}
 	if tmp == nil {
@@ -167,6 +126,85 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			}
 		}
 	}
+	return
+}
+
+func executeDelete(db fdb.Transactor, stmt *deleteStmt, args []interface{}) (err error) {
+	tmp, _, err1 := executeWhere(db, stmt, args)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if bytes, ok := tmp.([]byte); ok {
+		_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+			tr.Clear(fdb.Key(bytes))
+			return
+		})
+		return
+	}
+	kr := tmp.(fdb.KeyRange)
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		tr.ClearRange(kr)
+		return
+	})
+	return
+}
+
+func executeWhere(db fdb.Transactor, stmt whereStmt, args []interface{}) (res interface{}, conds []condition, err error) {
+	np := stmt.GetNumPlaceholders()
+	if np != len(args) {
+		err = errors.New("Expected " + strconv.FormatInt(int64(np), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
+		return
+	}
+	conds = stmt.GetConds()
+	scheme := stmt.GetScheme()
+	if len(args) > 0 {
+		conds, err = validateConditionArgs(scheme, conds, args)
+		if err != nil {
+			return
+		}
+	}
+	var sub subspace.Subspace
+	sub = scheme.Dir
+	n := len(conds) - 1
+	if n > 0 {
+		for i := range conds[:n] {
+			sub = sub.Sub(conds[i].Equal)
+		}
+	}
+	c := &conds[n]
+	if c.Equal != nil && len(conds) == len(scheme.Keys) {
+		res = sub.Sub(c.Equal).Bytes()
+		return
+	}
+	kr := fdb.KeyRange{}
+	if c.Equal != nil {
+		a, b := sub.Sub(c.Equal).FDBRangeKeys()
+		kr.Begin = a
+		kr.End = b
+	} else {
+		if c.Start[0] != nil {
+			k := sub.Sub(c.Start[0])
+			if c.Start[1] == nil {
+				kr.Begin = fdb.Key(append(k.Bytes(), 0x1))
+			} else {
+				kr.Begin = k
+			}
+		} else {
+			kr.Begin = fdb.Key(append(sub.Bytes(), 0x00))
+		}
+		if c.End[0] != nil {
+			k := sub.Sub(c.End[0])
+			if c.End[1] == nil {
+				kr.End = k
+			} else {
+				kr.End = fdb.Key(append(k.Bytes(), 0x1))
+			}
+		} else {
+			kr.End = fdb.Key(append(sub.Bytes(), 0xFF))
+		}
+	}
+	res = kr
 	return
 }
 
@@ -203,21 +241,6 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 		tr.Set(stmt.Scheme.Dir.Pack(tuple.Tuple(parts[0])), tuple.Tuple(parts[1]).Pack())
 		return
 	})
-	return
-}
-
-func executeDelete(db fdb.Transactor, stmt *deleteStmt, args []interface{}) (err error) {
-	if stmt.NumPlaceholders != len(args) {
-		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
-		return
-	}
-	conds := stmt.Conds
-	if len(args) > 0 {
-		conds, err = validateConditionArgs(stmt.Scheme, conds, args)
-		if err != nil {
-			return
-		}
-	}
 	return
 }
 
@@ -261,6 +284,12 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 	return
 }
 
+type whereStmt interface {
+	GetNumPlaceholders() int
+	GetConds() []condition
+	GetScheme() *TableScheme
+}
+
 type selectStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition    // <= len(Scheme.Keys)
@@ -268,6 +297,18 @@ type selectStmt struct {
 	NumPlaceholders int
 	Limit           int
 	Reverse         bool
+}
+
+func (self *selectStmt) GetNumPlaceholders() int {
+	return self.NumPlaceholders
+}
+
+func (self *selectStmt) GetConds() []condition {
+	return self.Conds
+}
+
+func (self *selectStmt) GetScheme() *TableScheme {
+	return self.Scheme
 }
 
 func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
@@ -334,6 +375,18 @@ type deleteStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition // <= len(Scheme.Keys)
 	NumPlaceholders int
+}
+
+func (self *deleteStmt) GetNumPlaceholders() int {
+	return self.NumPlaceholders
+}
+
+func (self *deleteStmt) GetConds() []condition {
+	return self.Conds
+}
+
+func (self *deleteStmt) GetScheme() *TableScheme {
+	return self.Scheme
 }
 
 type placeholder int

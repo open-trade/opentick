@@ -124,6 +124,11 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, 3, len(res))
 	assert.Equal(t, int64(39), res[0][3])
 	assert.Equal(t, int64(42), res[2][3])
+	_, err = Execute(db, "", "delete from test.test where a=2 and b=1 and b2=true and c>=39 and c<=42", nil)
+	assert.Equal(t, nil, err)
+	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true", nil)
+	assert.Equal(t, nil, err1)
+	assert.Equal(t, 0, len(res))
 }
 
 func Benchmark_resolveDelete(b *testing.B) {
