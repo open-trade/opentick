@@ -109,12 +109,21 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(42), 2.2, int64(102)}, res[0])
 	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true", nil)
 	assert.Equal(t, nil, err1)
-	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(39), 2.2, int64(105)}, res[0])
 	assert.Equal(t, 3, len(res))
+	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(39), 2.2, int64(105)}, res[0])
 	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true limit -2", nil)
 	assert.Equal(t, nil, err1)
-	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(42), 2.2, int64(102)}, res[0])
 	assert.Equal(t, 2, len(res))
+	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(42), 2.2, int64(102)}, res[0])
+	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true and c>39 and c<42", nil)
+	assert.Equal(t, nil, err1)
+	assert.Equal(t, 1, len(res))
+	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(41), 2.2, int64(104)}, res[0])
+	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true and c>=39 and c<=42", nil)
+	assert.Equal(t, nil, err1)
+	assert.Equal(t, 3, len(res))
+	assert.Equal(t, int64(39), res[0][3])
+	assert.Equal(t, int64(42), res[2][3])
 }
 
 func Benchmark_resolveDelete(b *testing.B) {

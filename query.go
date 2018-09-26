@@ -90,7 +90,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 		}
 		value, err2 := tuple.Unpack(tmp.([]byte))
 		if err2 != nil {
-			err = err2
+			err = errors.New("Internal errror: " + err2.Error())
 			return
 		}
 		res = []([]interface{}){make([]interface{}, len(stmt.Cols))}
@@ -103,31 +103,58 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 		}
 		return
 	}
-	var recs []fdb.KeyValue
+	sr := fdb.SelectorRange{}
 	if c.Equal != nil {
-		tmp, err1 := db.Transact(func(tr fdb.Transaction) (interface{}, error) {
-			return tr.GetRange(sub.Sub(c.Equal), fdb.RangeOptions{Limit: stmt.Limit, Reverse: stmt.Reverse}).GetSliceWithError()
-		})
-		if err1 != nil {
-			err = err1
-			return
+		a, b := sub.Sub(c.Equal).FDBRangeKeySelectors()
+		sr.Begin = a
+		sr.End = b
+	} else {
+		if c.Start[0] != nil {
+			k := sub.Sub(c.Start[0])
+			if c.Start[1] == nil {
+				sr.Begin = fdb.FirstGreaterThan(k)
+			} else {
+				sr.Begin = fdb.FirstGreaterOrEqual(k)
+			}
+		} else {
+			sr.Begin = fdb.FirstGreaterOrEqual(fdb.Key(append(sub.Bytes(), 0x00)))
 		}
-		if tmp == nil {
-			return
+		if c.End[0] != nil {
+			k := sub.Sub(c.End[0])
+			if c.End[1] == nil {
+				sr.End = fdb.FirstGreaterOrEqual(k)
+			} else {
+				sr.End = fdb.FirstGreaterThan(k)
+			}
+		} else {
+			sr.End = fdb.FirstGreaterOrEqual(fdb.Key(append(sub.Bytes(), 0xFF)))
 		}
-		recs = tmp.([]fdb.KeyValue)
+	}
+	tmp, err1 := db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+		return tr.GetRange(sr, fdb.RangeOptions{Limit: stmt.Limit, Reverse: stmt.Reverse}).GetSliceWithError()
+	})
+	if err1 != nil {
+		err = err1
+		return
+	}
+	if tmp == nil {
+		return
+	}
+	recs := tmp.([]fdb.KeyValue)
+	if len(recs) == 0 {
+		return
 	}
 	res = make([]([]interface{}), len(recs))
 	for i, rec := range recs {
 		res[i] = make([]interface{}, len(stmt.Cols))
 		key, err1 := stmt.Scheme.Dir.Unpack(rec.Key)
 		if err1 != nil {
-			err = err1
+			err = errors.New("Internal errror: " + err1.Error())
 			return
 		}
 		value, err2 := tuple.Unpack(rec.Value)
 		if err2 != nil {
-			err = err2
+			err = errors.New("Internal errror: " + err2.Error())
 			return
 		}
 		for j, col := range stmt.Cols {

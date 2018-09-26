@@ -12,6 +12,7 @@ github.com/apple/foundationdb v0.0.0-20180907170000-2f2aaf5bce97 h1:eWwHJs9Jx0Ye
 github.com/apple/foundationdb v0.0.0-20180907170000-2f2aaf5bce97/go.mod h1:r68WTUyFp2yVpUaqVBncjC7C62Cuom4IiEuRCVEKRbw=
 github.com/apple/foundationdb v0.0.0-20180913173739-e6eefe3363ef h1:yjgDoWVFONx0UPgsEoEpN95AFy+OI9YqjTKXlPDsWaI=
 github.com/apple/foundationdb v0.0.0-20180913173739-e6eefe3363ef/go.mod h1:r68WTUyFp2yVpUaqVBncjC7C62Cuom4IiEuRCVEKRbw=
+github.com/apple/foundationdb v0.0.0-20180924171112-a10ac552a5bc h1:Rv4s233vlx5pcywmAamVBA/fjo3kylOUT/wiRYgeuis=
 github.com/cosiner/argv v0.0.0-20170225145430-13bacc38a0a5 h1:rIXlvz2IWiupMFlC45cZCXZFvKX/ExBcSLrDy2G0Lp8=
 github.com/cosiner/argv v0.0.0-20170225145430-13bacc38a0a5/go.mod h1:p/NrK5tF6ICIly4qwEDsf6VDirFiWWz0FenfYBwJaKQ=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
