@@ -212,9 +212,7 @@ func decodeTableScheme(bytes []byte) *TableScheme {
 		keys[i] = cols[int(binary.BigEndian.Uint32(bytes))]
 		bytes = bytes[4:]
 	}
-	var tbl TableScheme
-	tbl.Cols = cols
-	tbl.Keys = keys
+	tbl := TableScheme{Cols: cols, Keys: keys}
 	tbl.fill()
 	return &tbl
 }

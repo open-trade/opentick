@@ -77,7 +77,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 	}
 	c := &conds[n]
 	if c.Equal != nil && len(conds) == len(stmt.Scheme.Keys) {
-		out, err1 := db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		tmp, err1 := db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 			ret = tr.Get(sub.Sub(c.Equal)).MustGet()
 			return
 		})
@@ -85,10 +85,10 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			err = err1
 			return
 		}
-		if out == nil {
+		if tmp == nil {
 			return
 		}
-		value, err2 := tuple.Unpack(out.([]byte))
+		value, err2 := tuple.Unpack(tmp.([]byte))
 		if err2 != nil {
 			err = err2
 			return
@@ -99,6 +99,44 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 				res[0][i] = conds[col.Pos].Equal
 			} else if int(col.Pos) < len(value) {
 				res[0][i] = value[col.Pos]
+			}
+		}
+		return
+	}
+	var recs []fdb.KeyValue
+	if c.Equal != nil {
+		tmp, err1 := db.Transact(func(tr fdb.Transaction) (interface{}, error) {
+			return tr.GetRange(sub.Sub(c.Equal), fdb.RangeOptions{Limit: stmt.Limit, Reverse: stmt.Reverse}).GetSliceWithError()
+		})
+		if err1 != nil {
+			err = err1
+			return
+		}
+		if tmp == nil {
+			return
+		}
+		recs = tmp.([]fdb.KeyValue)
+	}
+	res = make([]([]interface{}), len(recs))
+	for i, rec := range recs {
+		res[i] = make([]interface{}, len(stmt.Cols))
+		key, err1 := stmt.Scheme.Dir.Unpack(rec.Key)
+		if err1 != nil {
+			err = err1
+			return
+		}
+		value, err2 := tuple.Unpack(rec.Value)
+		if err2 != nil {
+			err = err2
+			return
+		}
+		for j, col := range stmt.Cols {
+			if col.IsKey {
+				if int(col.Pos) < len(key) {
+					res[i][j] = key[col.Pos]
+				}
+			} else if int(col.Pos) < len(value) {
+				res[i][j] = value[col.Pos]
 			}
 		}
 	}
@@ -166,6 +204,13 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 	if err != nil {
 		return
 	}
+	if ast.Limit != nil {
+		stmt.Limit = int(*ast.Limit)
+		if stmt.Limit < 0 {
+			stmt.Limit = -stmt.Limit
+			stmt.Reverse = true
+		}
+	}
 	if ast.Selected.All != nil {
 		stmt.Cols = scheme.Cols
 		return
@@ -194,6 +239,8 @@ type selectStmt struct {
 	Conds           []condition    // <= len(Scheme.Keys)
 	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
 	NumPlaceholders int
+	Limit           int
+	Reverse         bool
 }
 
 func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
