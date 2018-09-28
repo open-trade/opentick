@@ -72,6 +72,7 @@ func handleConnection(conn net.Conn) {
 		for n, err := conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
+				log.Println(err)
 				return
 			}
 		}
@@ -162,6 +163,9 @@ func handleConnection(conn net.Conn) {
 }
 
 func writeToClient(c client) {
+	defer func() {
+		log.Println("writing thread ended,", c.conn.RemoteAddr())
+	}()
 	for {
 		select {
 		case msg := <-c.ch:
