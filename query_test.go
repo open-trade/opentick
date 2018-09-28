@@ -129,6 +129,12 @@ func Test_Query(t *testing.T) {
 	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true", nil)
 	assert.Equal(t, nil, err1)
 	assert.Equal(t, 0, len(res))
+	_, err = Execute(db, "", "create database test", nil)
+	assert.Equal(t, "Database test already exists", err.Error())
+	_, err = Execute(db, "", "create database if not exists test", nil)
+	assert.Equal(t, nil, err)
+	_, err = Execute(db, "", "create table if not exists test.test(x int)", nil)
+	assert.Equal(t, nil, err)
 }
 
 func Benchmark_resolveDelete(b *testing.B) {

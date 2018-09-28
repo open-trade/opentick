@@ -72,7 +72,7 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 		}
-		var data []interface{}
+		var data map[string]interface{}
 		var err error
 		err = bson.Unmarshal(body, &data)
 		if err != nil {
@@ -89,32 +89,28 @@ func handleConnection(conn net.Conn) {
 		var args []interface{}
 		var dbName string
 		var exists bool
-		if len(data) < 3 {
-			res = "Invalid input"
-			goto reply
-		}
-		token, ok = data[0].(int)
+		token, ok = data["0"].(int)
 		if !ok {
-			res = fmt.Sprint("Invalid token, expected int, got ", data[0])
+			res = fmt.Sprint("Invalid token, expected int, got ", data["0"])
 			goto reply
 		}
-		cmd, ok = data[1].(string)
+		cmd, ok = data["1"].(string)
 		if !ok {
-			res = fmt.Sprint("Invalid command, exepcted string, got ", data[1])
+			res = fmt.Sprint("Invalid command, exepcted string, got ", data["1"])
 			goto reply
 		}
-		if len(data) > 3 && data[3] != nil {
-			args, ok = data[3].([]interface{})
+		if len(data) > 3 && data["3"] != nil {
+			args, ok = data["3"].([]interface{})
 			if !ok {
-				res = fmt.Sprint("Invalid arguments, expected array, got ", data[3])
+				res = fmt.Sprint("Invalid arguments, expected array, got ", data["3"])
 				goto reply
 			}
 		}
-		sql, ok = data[2].(string)
+		sql, ok = data["2"].(string)
 		if !ok {
-			preparedId, ok = data[2].(int)
+			preparedId, ok = data["2"].(int)
 			if !ok {
-				res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data[2])
+				res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
 				goto reply
 			}
 			if preparedId >= len(prepared) {
@@ -162,11 +158,13 @@ func handleConnection(conn net.Conn) {
 			res = "Invalid command " + cmd
 		}
 	reply:
-		data2, err2 := bson.Marshal([]interface{}{token, res})
+		data2, err2 := bson.Marshal(map[string]interface{}{"0": token, "1": res})
 		if err2 != nil {
 			panic(err2)
 		}
-		ch <- data2
+		var size [4]byte
+		binary.LittleEndian.PutUint32(size[:], uint32(len(data2)))
+		ch <- append(size[:], data2...)
 	}
 }
 

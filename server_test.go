@@ -14,5 +14,11 @@ func Test_Server(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	assert.Equal(t, nil, err)
-	conn.Close()
+	var ret [][]interface{}
+	var fut client.Future
+	fut, err = conn.Execute("select * from test where a=1")
+	ret, err = fut.Get()
+	assert.Equal(t, nil, ret)
+	assert.Equal(t, nil, err)
+	defer conn.Close()
 }

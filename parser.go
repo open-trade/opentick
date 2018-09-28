@@ -8,7 +8,7 @@ import (
 
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
-		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT)\b)` +
+		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
 		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
@@ -59,8 +59,8 @@ type AstDrop struct {
 }
 
 type AstCreate struct {
-	Table    *AstCreateTable `"TABLE" @@`
-	Database *string         `| "DATABASE" @Ident`
+	Table    *AstCreateTable    `"TABLE" @@`
+	Database *AstCreateDatabase `| "DATABASE" @@`
 }
 
 type AstDelete struct {
@@ -68,9 +68,15 @@ type AstDelete struct {
 	Where *AstExpression `["WHERE" @@]`
 }
 
+type AstCreateDatabase struct {
+	IfNotExists *string `[@("IF" "NOT" "EXISTS")]`
+	Name        *string `@Ident`
+}
+
 type AstCreateTable struct {
-	Name *AstTableName `@@`
-	Cols []AstTypeDef  `"(" @@ {"," @@} ")"`
+	IfNotExists *string       `[@("IF" "NOT" "EXISTS")]`
+	Name        *AstTableName `@@`
+	Cols        []AstTypeDef  `"(" @@ {"," @@} ")"`
 }
 
 type AstTypeDef struct {

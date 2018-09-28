@@ -42,6 +42,11 @@ func HasDatabase(db fdb.Transactor, dbName string) (bool, error) {
 	return directory.Exists(db, path)
 }
 
+func HasTable(db fdb.Transactor, dbName string, tblName string) (bool, error) {
+	path := []string{"db", dbName, tblName}
+	return directory.Exists(db, path)
+}
+
 func CreateDatabase(db fdb.Transactor, dbName string) (err error) {
 	path := []string{"db", dbName}
 	exists, err1 := directory.Exists(db, path)

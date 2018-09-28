@@ -28,7 +28,7 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 	token := c.tokenCounter
 	c.tokenCounter++
 	if dbName != "" {
-		cmd := []interface{}{token, "use", dbName}
+		cmd := map[string]interface{}{"0": token, "1": "use", "2": dbName}
 		err = c.send(cmd)
 		if err != nil {
 			c.Close()
@@ -65,9 +65,9 @@ func (self *future) get() (interface{}, error) {
 				if err, _ := data.(error); err != nil {
 					return nil, err
 				}
-				tmp := data.([]interface{})
-				token := tmp[0].(int)
-				res = tmp[1]
+				tmp := data.(map[string]interface{})
+				token := tmp["0"].(int)
+				res = tmp["1"]
 				if token == self.token {
 					goto done
 				} else {
@@ -85,6 +85,9 @@ done:
 
 func (self *future) Get() ([][]interface{}, error) {
 	res, err := self.get()
+	if res == nil {
+		return nil, err
+	}
 	return res.([][]interface{}), err
 }
 
@@ -98,18 +101,17 @@ type connection struct {
 
 func (self *connection) Close() {
 	self.conn.Close()
-	close(self.ch)
 }
 
 func (self *connection) Execute(sql string, args ...interface{}) (ret Future, err error) {
 	prepared := -1
-	var cmd []interface{}
+	var cmd map[string]interface{}
 	if len(args) > 0 {
 		var ok bool
 		if prepared, ok = self.prepared[sql]; !ok {
 			token := self.tokenCounter
 			self.tokenCounter++
-			cmd = []interface{}{token, "prepare", sql}
+			cmd = map[string]interface{}{"0": token, "1": "prepare", "2": sql}
 			err = self.send(cmd)
 			if err != nil {
 				return
@@ -126,9 +128,9 @@ func (self *connection) Execute(sql string, args ...interface{}) (ret Future, er
 	}
 	token := self.tokenCounter
 	self.tokenCounter++
-	cmd = []interface{}{token, "run", sql, args}
+	cmd = map[string]interface{}{"0": token, "1": "run", "2": sql, "3": args}
 	if prepared >= 0 {
-		cmd[2] = prepared
+		cmd["2"] = prepared
 	}
 	err = self.send(cmd)
 	if err != nil {
@@ -138,11 +140,14 @@ func (self *connection) Execute(sql string, args ...interface{}) (ret Future, er
 	return
 }
 
-func (self *connection) send(data []interface{}) error {
+func (self *connection) send(data map[string]interface{}) error {
 	out, err := bson.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
+	var size [4]byte
+	binary.LittleEndian.PutUint32(size[:], uint32(len(out)))
+	out = append(size[:], out...)
 	n := len(out)
 	for n > 0 {
 		n2, err := self.conn.Write(out)
@@ -150,7 +155,7 @@ func (self *connection) send(data []interface{}) error {
 			return err
 		}
 		n -= n2
-		out = out[n2:]
+		out = out[2:]
 	}
 	return nil
 }
@@ -162,7 +167,9 @@ func recv(c connection) {
 		for n, err := c.conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
-				c.ch <- err
+				if c.ch != nil {
+					c.ch <- err
+				}
 				return
 			}
 		}
@@ -179,7 +186,7 @@ func recv(c connection) {
 				return
 			}
 		}
-		var data []interface{}
+		var data map[string]interface{}
 		var err error
 		err = bson.Unmarshal(body, &data)
 		if err != nil {

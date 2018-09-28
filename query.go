@@ -49,8 +49,31 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 
 	if ast.Create != nil {
 		if ast.Create.Database != nil {
-			err = CreateDatabase(db, *ast.Create.Database)
+			if ast.Create.Database.IfNotExists != nil {
+				exists, err1 := HasDatabase(db, *ast.Create.Database.Name)
+				if err1 != nil {
+					err = err1
+					return
+				}
+				if exists {
+					return
+				}
+			}
+			err = CreateDatabase(db, *ast.Create.Database.Name)
 		} else if ast.Create.Table != nil {
+			if ast.Create.Table.IfNotExists != nil {
+				if dbName == "" {
+					dbName = ast.Create.Table.Name.DatabaseName()
+				}
+				exists, err1 := HasTable(db, dbName, ast.Create.Table.Name.TableName())
+				if err1 != nil {
+					err = err1
+					return
+				}
+				if exists {
+					return
+				}
+			}
 			err = CreateTable(db, dbName, ast.Create.Table)
 		}
 	} else if ast.Drop != nil {
