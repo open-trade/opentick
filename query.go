@@ -13,11 +13,40 @@ import (
 	"time"
 )
 
+func Resolve(db fdb.Transactor, dbName string, ast *Ast) (stmt interface{}, err error) {
+	if ast.Select != nil {
+		return resolveSelect(db, dbName, ast.Select)
+	} else if ast.Insert != nil {
+		return resolveInsert(db, dbName, ast.Insert)
+	} else if ast.Delete != nil {
+		return resolveDelete(db, dbName, ast.Delete)
+	}
+	err = errors.New("Only select/insert/delete can be resolved")
+	return
+}
+
+func ExecuteStmt(db fdb.Transactor, stmt interface{}, args []interface{}) (res [][]interface{}, err error) {
+	if stmt2, ok := stmt.(insertStmt); ok {
+		err = executeInsert(db, &stmt2, args)
+		return
+	}
+	if stmt2, ok := stmt.(selectStmt); ok {
+		return executeSelect(db, &stmt2, args)
+	}
+	if stmt2, ok := stmt.(deleteStmt); ok {
+		err = executeDelete(db, &stmt2, args)
+		return
+	}
+	err = errors.New("Invalid statement")
+	return
+}
+
 func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (res [][]interface{}, err error) {
 	ast, err1 := Parse(sql)
 	if err1 != nil {
 		return nil, err1
 	}
+
 	if ast.Create != nil {
 		if ast.Create.Database != nil {
 			err = CreateDatabase(db, *ast.Create.Database)
@@ -33,24 +62,13 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 			}
 			err = DropTable(db, dbName, ast.Drop.Table.TableName())
 		}
-	} else if ast.Select != nil {
-		stmt, err1 := resolveSelect(db, dbName, ast.Select)
+	} else {
+		stmt, err1 := Resolve(db, dbName, ast)
 		if err1 != nil {
-			return nil, err1
+			err = err1
+			return
 		}
-		res, err = executeSelect(db, &stmt, args)
-	} else if ast.Insert != nil {
-		stmt, err1 := resolveInsert(db, dbName, ast.Insert)
-		if err1 != nil {
-			return nil, err1
-		}
-		err = executeInsert(db, &stmt, args)
-	} else if ast.Delete != nil {
-		stmt, err1 := resolveDelete(db, dbName, ast.Delete)
-		if err1 != nil {
-			return nil, err1
-		}
-		err = executeDelete(db, &stmt, args)
+		return ExecuteStmt(db, stmt, args)
 	}
 	return
 }
@@ -527,7 +545,6 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 			}
 		}
 		ret = v1
-		return
 	case Double, Float:
 		var v1 float64
 		switch v.(type) {
@@ -543,10 +560,8 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		switch col.Type {
 		case Double:
 			ret = v1
-			return
 		case Float:
 			ret = float32(v1)
-			return
 		}
 	case Boolean:
 		v1, ok := v.(bool)
@@ -554,7 +569,6 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 			goto hasError
 		}
 		ret = v1
-		return
 	case Timestamp:
 		var dt Datetime
 		v1, ok1 := v.(int64)
@@ -579,15 +593,14 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		dt.Second = time1.Unix()
 		dt.Nanosecond = uint32(time1.Nanosecond())
 		ret = dt
-		return
 	case Text:
 		v1, ok := v.(string)
 		if !ok {
 			goto hasError
 		}
 		ret = v1
-		return
 	}
+	return
 hasError:
 	err = errors.New("Invalid " + fmt.Sprint(reflect.TypeOf(v)) + " value (" + fmt.Sprint(v) + ") for \"" + col.Name + "\" of " + col.Type.Name())
 	return
