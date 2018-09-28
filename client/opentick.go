@@ -25,6 +25,22 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 	}
 	c := connection{conn: conn, prepared: make(map[string]int), store: make(map[int]interface{}), ch: make(chan interface{})}
 	go recv(c)
+	token := c.tokenCounter
+	c.tokenCounter++
+	if dbName != "" {
+		cmd := []interface{}{token, "use", dbName}
+		err = c.send(cmd)
+		if err != nil {
+			c.Close()
+			return
+		}
+		f := future{token, &c}
+		_, err = f.get()
+		if err != nil {
+			c.Close()
+			return
+		}
+	}
 	ret = &c
 	return
 }

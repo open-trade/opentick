@@ -30,16 +30,12 @@ func StartServer(ip string, port int) error {
 	return nil
 }
 
-type Client interface {
-	Send([]byte)
-}
-
-type client struct {
+type connection struct {
 	ch   chan []byte
 	conn net.Conn
 }
 
-func (self *client) Send(msg []byte) {
+func (self *connection) Send(msg []byte) {
 	self.ch <- msg
 }
 
@@ -51,7 +47,7 @@ func handleConnection(conn net.Conn) {
 		conn.Close()
 		log.Println("Closed connection from", conn.RemoteAddr())
 	}()
-	go writeToClient(client{ch, conn})
+	go writeToConnection(connection{ch, conn})
 	var prepared []interface{}
 	for {
 		var head [4]byte
@@ -91,6 +87,8 @@ func handleConnection(conn net.Conn) {
 		var ast *Ast
 		var res interface{}
 		var args []interface{}
+		var dbName string
+		var exists bool
 		if len(data) < 3 {
 			res = "Invalid input"
 			goto reply
@@ -129,7 +127,7 @@ func handleConnection(conn net.Conn) {
 		}
 		if cmd == "run" {
 			if sql != "" {
-				res, err = Execute(defaultDB, "", sql, args)
+				res, err = Execute(defaultDB, dbName, sql, args)
 			} else {
 				res, err = ExecuteStmt(defaultDB, prepared[preparedId], args)
 			}
@@ -143,13 +141,23 @@ func handleConnection(conn net.Conn) {
 				res = err.Error()
 				goto reply
 			}
-			res, err = Resolve(defaultDB, "", ast)
+			res, err = Resolve(defaultDB, dbName, ast)
 			if err != nil {
 				res = err.Error()
 				goto reply
 			}
 			prepared = append(prepared, res)
 			res = len(prepared) - 1
+		} else if cmd == "use" {
+			dbName = sql
+			exists, err = HasDatabase(defaultDB, dbName)
+			if err != nil {
+				res = err.Error()
+				goto reply
+			}
+			if !exists {
+				res = dbName + " does not exist"
+			}
 		} else {
 			res = "Invalid command " + cmd
 		}
@@ -162,7 +170,7 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func writeToClient(c client) {
+func writeToConnection(c connection) {
 	defer func() {
 		log.Println("writing thread ended,", c.conn.RemoteAddr())
 	}()

@@ -37,6 +37,11 @@ func (self *DataType) Name() string {
 	return typeNames[int(*self)]
 }
 
+func HasDatabase(db fdb.Transactor, dbName string) (bool, error) {
+	path := []string{"db", dbName}
+	return directory.Exists(db, path)
+}
+
 func CreateDatabase(db fdb.Transactor, dbName string) (err error) {
 	path := []string{"db", dbName}
 	exists, err1 := directory.Exists(db, path)
