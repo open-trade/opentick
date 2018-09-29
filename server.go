@@ -7,15 +7,15 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"net"
-	"strconv"
 )
 
 var defaultDB fdb.Transactor
 
-func StartServer(ip string, port int) error {
+func StartServer(addr string) error {
 	fdb.MustAPIVersion(FdbVersion)
 	defaultDB = fdb.MustOpenDefault()
-	ln, err := net.Listen("tcp", ip+":"+strconv.FormatInt(int64(port), 10))
+	ln, err := net.Listen("tcp", addr)
+	log.Println("Listening on " + addr)
 	if err != nil {
 		return err
 	}

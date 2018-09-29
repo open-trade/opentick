@@ -4,13 +4,14 @@ import (
 	"github.com/opentradesolutions/opentick/client"
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/assert"
+	"strconv"
 	"testing"
 	"time"
 )
 
 func Test_Server(t *testing.T) {
 	port, _ := freeport.GetFreePort()
-	go StartServer("", port)
+	go StartServer(":" + strconv.FormatInt(int64(port), 10))
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "")
 	assert.Equal(t, nil, err)
@@ -57,7 +58,7 @@ func Test_Server(t *testing.T) {
 func Benchmark_client_insert_sync(b *testing.B) {
 	b.StopTimer()
 	port, _ := freeport.GetFreePort()
-	go StartServer("", port)
+	go StartServer(":" + strconv.FormatInt(int64(port), 10))
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
