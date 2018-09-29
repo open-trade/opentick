@@ -172,4 +172,6 @@ func Test_CreateTable(t *testing.T) {
 	dir2, _ := directory.Open(db, []string{"db", "test", "test", "scheme"}, nil)
 	assert.Equal(t, len(dir.Bytes()), len(dir2.Bytes()))
 	assert.Equal(t, string(tbl.Dir.Bytes()), string(dir.Bytes()))
+	_, err = Execute(db, "", "drop table test.test", nil)
+	assert.Equal(t, nil, err)
 }

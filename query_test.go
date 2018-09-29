@@ -135,6 +135,7 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, nil, err)
 	_, err = Execute(db, "", "create table if not exists test.test(x int)", nil)
 	assert.Equal(t, nil, err)
+	Execute(db, "", "drop table test.test", nil)
 }
 
 func Benchmark_resolveDelete(b *testing.B) {
@@ -153,6 +154,7 @@ func Benchmark_resolveDelete(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+	Execute(db, "", "drop table test.test", nil)
 }
 
 func Benchmark_resolveInsert(b *testing.B) {
@@ -171,6 +173,7 @@ func Benchmark_resolveInsert(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+	Execute(db, "", "drop table test.test", nil)
 }
 
 func Benchmark_resolveSelect(b *testing.B) {
@@ -189,4 +192,5 @@ func Benchmark_resolveSelect(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+	Execute(db, "", "drop table test.test", nil)
 }
