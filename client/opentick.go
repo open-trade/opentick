@@ -14,7 +14,8 @@ type Future interface {
 
 // not thread-safe
 type Connection interface {
-	Execute(sql string, args ...interface{}) (Future, error)
+	Execute(sql string, args ...interface{}) (ret [][]interface{}, err error)
+	ExecuteAsync(sql string, args ...interface{}) (Future, error)
 	Close()
 }
 
@@ -85,10 +86,11 @@ done:
 
 func (self *future) Get() ([][]interface{}, error) {
 	res, err := self.get()
-	if res == nil {
+	if res == nil || err != nil {
 		return nil, err
 	}
-	return res.([][]interface{}), err
+	ret, _ := res.([][]interface{})
+	return ret, nil
 }
 
 type connection struct {
@@ -103,7 +105,16 @@ func (self *connection) Close() {
 	self.conn.Close()
 }
 
-func (self *connection) Execute(sql string, args ...interface{}) (ret Future, err error) {
+func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interface{}, err error) {
+	var fut Future
+	fut, err = self.ExecuteAsync(sql, args...)
+	if err != nil {
+		return
+	}
+	return fut.Get()
+}
+
+func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Future, err error) {
 	prepared := -1
 	var cmd map[string]interface{}
 	if len(args) > 0 {

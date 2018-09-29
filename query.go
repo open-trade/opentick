@@ -605,11 +605,20 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 			ret = dt
 			return
 		}
-		v2, ok2 := v.(string)
-		if !ok2 {
+		v2, ok2 := v.([]int64)
+		if ok2 {
+			if len(v2) == 2 {
+				dt.Second = v2[0]
+				dt.Nanosecond = uint32(v2[1])
+				return
+			}
 			goto hasError
 		}
-		time1, err1 := time.Parse(time.RFC3339, v2)
+		v3, ok3 := v.(string)
+		if !ok3 {
+			goto hasError
+		}
+		time1, err1 := time.Parse(time.RFC3339, v3)
 		if err1 != nil {
 			goto hasError
 		}

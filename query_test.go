@@ -77,7 +77,7 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, "Database test does not exist", err.Error())
 	Execute(db, "", "create database test", nil)
 	_, err = Execute(db, "", "drop table test.test", nil)
-	assert.Equal(t, "the directory does not exist", err.Error())
+	assert.Equal(t, "Table test.test does not exists", err.Error())
 	_, err = Execute(db, "", "create table test.test(a int, b int, b2 boolean, c int, d double, e bigint, primary key(a, b, b2, c))", nil)
 	assert.Equal(t, nil, err)
 	_, err = Execute(db, "", "create table test.test(a int, b int, b2 boolean, c int, d double, e bigint, primary key(a, b, b2, c))", nil)

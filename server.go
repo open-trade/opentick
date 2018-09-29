@@ -49,6 +49,7 @@ func handleConnection(conn net.Conn) {
 	}()
 	go writeToConnection(connection{ch, conn})
 	var prepared []interface{}
+	var dbName string
 	for {
 		var head [4]byte
 		tmp := head[:4]
@@ -87,8 +88,8 @@ func handleConnection(conn net.Conn) {
 		var ast *Ast
 		var res interface{}
 		var args []interface{}
-		var dbName string
 		var exists bool
+		var stmt interface{}
 		token, ok = data["0"].(int)
 		if !ok {
 			res = fmt.Sprint("Invalid token, expected int, got ", data["0"])
@@ -117,21 +118,25 @@ func handleConnection(conn net.Conn) {
 				res = fmt.Sprint("Invalid preparedId ", preparedId)
 				goto reply
 			}
+			stmt = prepared[preparedId]
 		} else if sql == "" {
 			res = "Empty sql"
 			goto reply
 		}
 		if cmd == "run" {
-			if sql != "" {
-				res, err = Execute(defaultDB, dbName, sql, args)
-			} else {
-				res, err = ExecuteStmt(defaultDB, prepared[preparedId], args)
-			}
-			if err != nil {
-				res = err.Error()
-				goto reply
-			}
-		} else if cmd == "prepared" {
+			go func() {
+				if sql != "" {
+					res, err = Execute(defaultDB, dbName, sql, args)
+				} else {
+					res, err = ExecuteStmt(defaultDB, stmt, args)
+				}
+				if err != nil {
+					res = err.Error()
+				}
+				reply(token, res, ch)
+			}()
+			continue
+		} else if cmd == "prepare" {
 			ast, err = Parse(sql)
 			if err != nil {
 				res = err.Error()
@@ -158,23 +163,30 @@ func handleConnection(conn net.Conn) {
 			res = "Invalid command " + cmd
 		}
 	reply:
-		data2, err2 := bson.Marshal(map[string]interface{}{"0": token, "1": res})
-		if err2 != nil {
-			panic(err2)
-		}
-		var size [4]byte
-		binary.LittleEndian.PutUint32(size[:], uint32(len(data2)))
-		ch <- append(size[:], data2...)
+		reply(token, res, ch)
 	}
+}
+
+func reply(token int, res interface{}, ch chan []byte) {
+	data, err := bson.Marshal(map[string]interface{}{"0": token, "1": res})
+	if err != nil {
+		panic(err)
+	}
+	var size [4]byte
+	binary.LittleEndian.PutUint32(size[:], uint32(len(data)))
+	ch <- append(size[:], data...)
 }
 
 func writeToConnection(c connection) {
 	defer func() {
-		log.Println("writing thread ended,", c.conn.RemoteAddr())
+		log.Println("Writing thread ended,", c.conn.RemoteAddr())
 	}()
 	for {
 		select {
-		case msg := <-c.ch:
+		case msg, ok := <-c.ch:
+			if !ok {
+				return
+			}
 			n := len(msg)
 			for n > 0 {
 				n2, err := c.conn.Write(msg)

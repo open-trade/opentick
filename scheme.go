@@ -313,6 +313,15 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 
 func openTable(db fdb.Transactor, dbName string, tblName string) (dirTable directory.DirectorySubspace, dirScheme directory.DirectorySubspace, err error) {
 	pathTable := []string{"db", dbName, tblName}
+	var exists bool
+	exists, err = directory.Exists(db, pathTable)
+	if err != nil {
+		return
+	}
+	if !exists {
+		err = errors.New("Table " + dbName + "." + tblName + " does not exists")
+		return
+	}
 	dirTable, err = directory.Open(db, pathTable, nil)
 	if err != nil {
 		return
