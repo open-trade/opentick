@@ -111,10 +111,11 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			err = err1
 			return
 		}
-		if tmp == nil {
+		bytes = tmp.([]byte)
+		if len(bytes) == 0 {
 			return
 		}
-		value, err2 := tuple.Unpack(tmp.([]byte))
+		value, err2 := tuple.Unpack(bytes)
 		if err2 != nil {
 			err = errors.New("Internal errror: " + err2.Error())
 			return
