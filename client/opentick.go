@@ -6,6 +6,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"net"
 	"strconv"
+	"time"
 )
 
 type Future interface {
@@ -84,13 +85,31 @@ done:
 	return res, nil
 }
 
-func (self *future) Get() ([][]interface{}, error) {
-	res, err := self.get()
+func (self *future) Get() (ret [][]interface{}, err error) {
+	var res interface{}
+	res, err = self.get()
 	if res == nil || err != nil {
-		return nil, err
+		return
 	}
-	ret, _ := res.([][]interface{})
-	return ret, nil
+	if res2, ok := res.([]interface{}); ok {
+		for _, rec := range res2 {
+			if rec2, ok2 := rec.([]interface{}); ok2 {
+				for i, v := range rec2 {
+					if v2, ok := v.([]interface{}); ok {
+						if len(v2) == 2 {
+							if sec, ok1 := v2[0].(int64); ok1 {
+								if nsec, ok2 := v2[1].(int64); ok2 {
+									rec2[i] = time.Unix(sec, nsec).UTC()
+								}
+							}
+						}
+					}
+				}
+				ret = append(ret, rec2)
+			}
+		}
+	}
+	return
 }
 
 type connection struct {
@@ -118,6 +137,11 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 	prepared := -1
 	var cmd map[string]interface{}
 	if len(args) > 0 {
+		for i, v := range args {
+			if v2, ok := v.(time.Time); ok {
+				args[i] = []int64{v2.Unix(), int64(v2.Nanosecond())}
+			}
+		}
 		var ok bool
 		if prepared, ok = self.prepared[sql]; !ok {
 			token := self.tokenCounter

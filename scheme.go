@@ -27,8 +27,8 @@ const (
 )
 
 type Datetime struct {
-	Second     int64  // time.Unix()
-	Nanosecond uint32 // [0, 999999999]
+	Second     int64 // time.Unix()
+	Nanosecond int   // [0, 999999999]
 }
 
 var typeNames = []string{"TinyInt", "SmallInt", "Int", "BigInt", "Double", "Float", "Timestamp", "Boolean", "Text"}

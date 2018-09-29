@@ -596,21 +596,21 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		var dt Datetime
 		v1, ok1 := v.(int64)
 		if ok1 {
-			if (v1 >> 32) == 0 {
-				dt.Second = v1
-			} else {
-				dt.Second = v1 >> 32
-				dt.Nanosecond = uint32(v1 & 0xFFFFFFFF)
-			}
+			dt.Second = v1
 			ret = dt
 			return
 		}
-		v2, ok2 := v.([]int64)
+		v2, ok2 := v.([]interface{})
 		if ok2 {
 			if len(v2) == 2 {
-				dt.Second = v2[0]
-				dt.Nanosecond = uint32(v2[1])
-				return
+				if v3, ok3 := v2[0].(int64); ok3 {
+					dt.Second = v3
+					if v4, ok4 := v2[1].(int64); ok4 {
+						dt.Nanosecond = int(v4)
+						ret = dt
+						return
+					}
+				}
 			}
 			goto hasError
 		}
@@ -623,7 +623,7 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 			goto hasError
 		}
 		dt.Second = time1.Unix()
-		dt.Nanosecond = uint32(time1.Nanosecond())
+		dt.Nanosecond = int(time1.Nanosecond())
 		ret = dt
 	case Text:
 		v1, ok := v.(string)
