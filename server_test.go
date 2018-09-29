@@ -35,5 +35,8 @@ func Test_Server(t *testing.T) {
 	res, err = conn.Execute("select * from test where sec=? and interval=?", 1, 2)
 	assert.Equal(t, nil, err)
 	assert.Equal(t, tm.UTC(), res[0][2])
+	res, err = conn.Execute("select * from test where sec=? and interval=? and tm=?", 1, 2, tm)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, tm.UTC(), res[0][2])
 	defer conn.Close()
 }

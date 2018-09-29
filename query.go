@@ -272,9 +272,6 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 		parts[i] = make([]tuple.TupleElement, len(cols))
 		for _, col := range cols {
 			v := values[col.PosCol]
-			if v2, ok := v.(Datetime); ok {
-				v = tuple.Tuple{v2.Second, v2.Nanosecond}
-			}
 			parts[i][col.Pos] = tuple.TupleElement(v)
 		}
 	}
@@ -593,21 +590,17 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		}
 		ret = v1
 	case Timestamp:
-		var dt Datetime
 		v1, ok1 := v.(int64)
 		if ok1 {
-			dt.Second = v1
-			ret = dt
+			ret = tuple.Tuple{v1, 0}
 			return
 		}
 		v2, ok2 := v.([]interface{})
 		if ok2 {
 			if len(v2) == 2 {
 				if v3, ok3 := v2[0].(int64); ok3 {
-					dt.Second = v3
 					if v4, ok4 := v2[1].(int64); ok4 {
-						dt.Nanosecond = int(v4)
-						ret = dt
+						ret = tuple.Tuple{v3, v4}
 						return
 					}
 				}
@@ -622,9 +615,7 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		if err1 != nil {
 			goto hasError
 		}
-		dt.Second = time1.Unix()
-		dt.Nanosecond = int(time1.Nanosecond())
-		ret = dt
+		ret = tuple.Tuple{time1.Unix(), int(time1.Nanosecond())}
 	case Text:
 		v1, ok := v.(string)
 		if !ok {
