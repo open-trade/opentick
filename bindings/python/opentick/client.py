@@ -10,6 +10,8 @@ from bson import BSON
 import atexit
 import threading
 
+utc_start = datetime.datetime.fromtimestamp(0)
+
 
 def connect(addr, port, db_name):
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -31,7 +33,10 @@ class Connection(threading.Thread):
     self._cond = threading.Condition()
     self._store = {}
     if db_name:
-      pass
+      ticker = self.get_ticker()
+      cmd = {'0': ticker, '1': 'use', '2': db_name}
+      self.send(cmd)
+      Future(ticker, self).get()
 
   def close(self):
     self.__sock.close()
@@ -42,8 +47,26 @@ class Connection(threading.Thread):
     return fut.Get()
 
   def execute_async(self, sql, *args):
+    prepared = None
     if len(args) > 0:
-      pass
+      for i in xrange(args):
+        arg = args[i]
+        if isinstance(arg, datetime.datetime):
+          s = arg - utc_start
+          args[i] = (int(s), int(s * 1000000) % 1000000)
+      prepared = self.__prepared.get(sql)
+      if prepared != None:
+        ticker = self.get_ticker()
+        cmd = {'0': ticker, '1': 'prepare', '2': sql}
+        self.send(cmd)
+        self.prepared[sql] = Future(ticker, self).get()
+    ticker = self.get_ticker()
+    cmd = {'0': ticker, '1': 'run', '2': sql, '3': args}
+    if prepared == None:
+      cmd['2'] = prepared
+    self.send(cmd)
+    f = Future(ticker, self)
+    return f
 
   def run(self):
     while True:
@@ -79,7 +102,7 @@ class Connection(threading.Thread):
           body += got
         msg = BSON.decode(body)
         self._mutex.acquire()
-        self._store[msg[0]] = msg
+        self._store[msg['0']] = msg
         self._cond.notify_all()
         self._mutex.release()
       except socket.error as e:
@@ -104,9 +127,9 @@ class Connection(threading.Thread):
 
 class Future(object):
 
-  def __init__(self, conn, ticker):
-    self.__conn = conn
+  def __init__(self, ticker, conn):
     self.__ticker = ticker
+    self.__conn = conn
 
   def get(self):
     while True:
@@ -115,6 +138,17 @@ class Future(object):
       if msg != None:
         del self.__conn._store[self.__ticker]
         self.__conn._mutex.release()
+        msg = msg['1']
+        if isinstance(msg, str):
+          raise msg
+        if isinstance(msg, list):
+          for rec in msg:
+            if isinstance(rec, list):
+              for i in xrange(len(rec)):
+                v = rec[i]
+                if isinstance(v, list) and len(v) == 2:
+                  rec[i] = datetime.datetime.fromtimestamp(
+                      v[0]) + datetime.timedelta(microseconds=v[1] / 1000)
         return msg
       err = self._conn._store.get(-1)
       if err:
