@@ -56,7 +56,6 @@ func Test_Server(t *testing.T) {
 }
 
 func Benchmark_client_insert_sync(b *testing.B) {
-	b.StopTimer()
 	port, _ := freeport.GetFreePort()
 	go StartServer(":" + strconv.FormatInt(int64(port), 10))
 	time.Sleep(100 * time.Millisecond)
@@ -64,10 +63,46 @@ func Benchmark_client_insert_sync(b *testing.B) {
 	_, err = conn.Execute("create database if not exists test")
 	_, err = conn.Execute("create table test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double,vwap double, primary key(sec, interval, tm))")
 	tm := time.Now()
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tm = tm.Add(time.Second)
 		_, err = conn.Execute("insert into test(sec, interval, tm, open) values(?, ?, ?, ?)", 1, 2, tm, i)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	conn.Execute("drop table test")
+}
+
+func Benchmark_insert_not_prepared(b *testing.B) {
+	port, _ := freeport.GetFreePort()
+	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	time.Sleep(100 * time.Millisecond)
+	conn, err := client.Connect("", port, "test")
+	_, err = conn.Execute("create database if not exists test")
+	_, err = conn.Execute("create table test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double,vwap double, primary key(sec, interval, tm))")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err = Execute(defaultDB, "", "insert into test.test(sec, interval, tm, open) values(?, ?, ?, ?)", []interface{}{1, 2, i, i})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	conn.Execute("drop table test")
+}
+
+func Benchmark_insert_prepared(b *testing.B) {
+	port, _ := freeport.GetFreePort()
+	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	time.Sleep(100 * time.Millisecond)
+	conn, err := client.Connect("", port, "test")
+	_, err = conn.Execute("create database if not exists test")
+	_, err = conn.Execute("create table test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double,vwap double, primary key(sec, interval, tm))")
+	ast, _ := Parse("insert into test.test(sec, interval, tm, open) values(?, ?, ?, ?)")
+	stmt, _ := Resolve(defaultDB, "", ast)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err = ExecuteStmt(defaultDB, stmt, []interface{}{1, 2, i, i})
 		if err != nil {
 			b.Fatal(err)
 		}

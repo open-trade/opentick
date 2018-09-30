@@ -139,7 +139,6 @@ func Test_Query(t *testing.T) {
 }
 
 func Benchmark_resolveDelete(b *testing.B) {
-	b.StopTimer()
 	fdb.MustAPIVersion(FdbVersion)
 	var db = fdb.MustOpenDefault()
 	DropDatabase(db, "test")
@@ -147,7 +146,7 @@ func Benchmark_resolveDelete(b *testing.B) {
 	ast, _ := Parse("create table test.test(a int, b int, c int, d double, e bigint, primary key(a, b, c))")
 	CreateTable(db, "", ast.Create.Table)
 	ast, _ = Parse("delete from test.test where a=2 and b=2 and c<?")
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := resolveDelete(db, "", ast.Delete)
 		if err != nil {
@@ -158,7 +157,6 @@ func Benchmark_resolveDelete(b *testing.B) {
 }
 
 func Benchmark_resolveInsert(b *testing.B) {
-	b.StopTimer()
 	fdb.MustAPIVersion(FdbVersion)
 	var db = fdb.MustOpenDefault()
 	DropDatabase(db, "test")
@@ -166,7 +164,7 @@ func Benchmark_resolveInsert(b *testing.B) {
 	ast, _ := Parse("create table test.test(a int, b int, c int, d double, e bigint, primary key(a, b, c))")
 	CreateTable(db, "", ast.Create.Table)
 	ast, _ = Parse("insert into test.test(a, b, c, d) values(1, 2, ?, 1.2)")
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := resolveInsert(db, "", ast.Insert)
 		if err != nil {
@@ -177,7 +175,6 @@ func Benchmark_resolveInsert(b *testing.B) {
 }
 
 func Benchmark_resolveSelect(b *testing.B) {
-	b.StopTimer()
 	fdb.MustAPIVersion(FdbVersion)
 	var db = fdb.MustOpenDefault()
 	DropDatabase(db, "test")
@@ -185,7 +182,7 @@ func Benchmark_resolveSelect(b *testing.B) {
 	ast, _ := Parse("create table test.test(a int, b int, c int, d double, e bigint, primary key(a, b, c))")
 	CreateTable(db, "", ast.Create.Table)
 	ast, _ = Parse("select a, b, c, d from test.test where a=1 and b=2 and c<2 and c>1")
-	b.StartTimer()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := resolveSelect(db, "", ast.Select)
 		if err != nil {

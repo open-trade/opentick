@@ -81,7 +81,6 @@ func Test_Parse(t *testing.T) {
 }
 
 func Benchmark_Parse(b *testing.B) {
-	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := Parse(sqlSelectStmt)
 		if err != nil {

@@ -591,32 +591,31 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		}
 		ret = v1
 	case Timestamp:
-		v1, ok1 := v.(int64)
-		if ok1 {
-			ret = tuple.Tuple{v1, 0}
+		switch v.(type) {
+		case int64:
+			ret = tuple.Tuple{v.(int64), 0}
 			return
-		}
-		v2, ok2 := v.([]interface{})
-		if ok2 {
-			if len(v2) == 2 {
-				if v3, ok3 := v2[0].(int64); ok3 {
-					if v4, ok4 := v2[1].(int64); ok4 {
+		case int:
+			ret = tuple.Tuple{v.(int), 0}
+			return
+		case []interface{}:
+			v1 := v.([]interface{})
+			if len(v1) == 2 {
+				if v3, ok3 := v1[0].(int64); ok3 {
+					if v4, ok4 := v1[1].(int64); ok4 {
 						ret = tuple.Tuple{v3, v4}
 						return
 					}
 				}
 			}
-			goto hasError
+		case string:
+			time1, err1 := time.Parse(time.RFC3339, v.(string))
+			if err1 == nil {
+				ret = tuple.Tuple{time1.Unix(), int(time1.Nanosecond())}
+				return
+			}
 		}
-		v3, ok3 := v.(string)
-		if !ok3 {
-			goto hasError
-		}
-		time1, err1 := time.Parse(time.RFC3339, v3)
-		if err1 != nil {
-			goto hasError
-		}
-		ret = tuple.Tuple{time1.Unix(), int(time1.Nanosecond())}
+		goto hasError
 	case Text:
 		v1, ok := v.(string)
 		if !ok {
