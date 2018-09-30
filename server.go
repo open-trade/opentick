@@ -81,7 +81,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 		var ok bool
-		var token int
+		var ticker int
 		var cmd string
 		var sql string
 		var preparedId int
@@ -90,9 +90,9 @@ func handleConnection(conn net.Conn) {
 		var args []interface{}
 		var exists bool
 		var stmt interface{}
-		token, ok = data["0"].(int)
+		ticker, ok = data["0"].(int)
 		if !ok {
-			res = fmt.Sprint("Invalid token, expected int, got ", data["0"])
+			res = fmt.Sprint("Invalid ticker, expected int, got ", data["0"])
 			goto reply
 		}
 		cmd, ok = data["1"].(string)
@@ -133,7 +133,7 @@ func handleConnection(conn net.Conn) {
 				if err != nil {
 					res = err.Error()
 				}
-				reply(token, res, ch)
+				reply(ticker, res, ch)
 			}()
 			continue
 		} else if cmd == "prepare" {
@@ -163,12 +163,12 @@ func handleConnection(conn net.Conn) {
 			res = "Invalid command " + cmd
 		}
 	reply:
-		reply(token, res, ch)
+		reply(ticker, res, ch)
 	}
 }
 
-func reply(token int, res interface{}, ch chan []byte) {
-	data, err := bson.Marshal(map[string]interface{}{"0": token, "1": res})
+func reply(ticker int, res interface{}, ch chan []byte) {
+	data, err := bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
 	if err != nil {
 		panic(err)
 	}

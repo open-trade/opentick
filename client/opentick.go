@@ -6,6 +6,8 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"net"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,7 +15,6 @@ type Future interface {
 	Get() ([][]interface{}, error)
 }
 
-// not thread-safe
 type Connection interface {
 	Execute(sql string, args ...interface{}) (ret [][]interface{}, err error)
 	ExecuteAsync(sql string, args ...interface{}) (Future, error)
@@ -25,64 +26,49 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 	if err != nil {
 		return
 	}
-	c := connection{conn: conn, prepared: make(map[string]int), store: make(map[int]interface{}), ch: make(chan interface{})}
+	m := &sync.Mutex{}
+	m.Lock()
+	c := &connection{conn: conn, prepared: make(map[string]int), cond: sync.NewCond(m)}
 	go recv(c)
-	token := c.tokenCounter
-	c.tokenCounter++
+	ticker := c.getTicker()
 	if dbName != "" {
-		cmd := map[string]interface{}{"0": token, "1": "use", "2": dbName}
+		cmd := map[string]interface{}{"0": ticker, "1": "use", "2": dbName}
 		err = c.send(cmd)
 		if err != nil {
 			c.Close()
 			return
 		}
-		f := future{token, &c}
+		f := future{ticker, c}
 		_, err = f.get()
 		if err != nil {
 			c.Close()
 			return
 		}
 	}
-	ret = &c
+	ret = c
 	return
 }
 
 type future struct {
-	token int
-	conn  *connection
+	ticker int
+	conn   *connection
 }
 
 func (self *future) get() (interface{}, error) {
-	var res interface{}
-	if tmp, ok := self.conn.store[self.token]; ok {
-		delete(self.conn.store, self.token)
-		res = tmp
-	} else {
-		for {
-			select {
-			case data, ok := <-self.conn.ch:
-				if !ok {
-					return nil, nil
-				}
-				if err, _ := data.(error); err != nil {
-					return nil, err
-				}
-				tmp := data.(map[string]interface{})
-				token := tmp["0"].(int)
-				res = tmp["1"]
-				if token == self.token {
-					goto done
-				} else {
-					self.conn.store[token] = res
-				}
+	for {
+		if tmp, ok := self.conn.store.Load(self.ticker); ok {
+			self.conn.store.Delete(self.ticker)
+			data := tmp.(map[string]interface{})
+			res, _ := data["1"]
+			if str, ok := res.(string); ok {
+				return nil, errors.New(str)
 			}
+			return res, nil
+		} else if tmp, ok := self.conn.store.Load(-1); ok {
+			return nil, tmp.(error)
 		}
+		self.conn.cond.Wait()
 	}
-done:
-	if str, ok := res.(string); ok {
-		return nil, errors.New(str)
-	}
-	return res, nil
 }
 
 func (self *future) Get() (ret [][]interface{}, err error) {
@@ -113,11 +99,12 @@ func (self *future) Get() (ret [][]interface{}, err error) {
 }
 
 type connection struct {
-	conn         net.Conn
-	tokenCounter int
-	prepared     map[string]int
-	store        map[int]interface{}
-	ch           chan interface{}
+	conn          net.Conn
+	tickerCounter int64
+	prepared      map[string]int
+	store         sync.Map
+	mutex         sync.Mutex
+	cond          *sync.Cond
 }
 
 func (self *connection) Close() {
@@ -144,14 +131,13 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 		}
 		var ok bool
 		if prepared, ok = self.prepared[sql]; !ok {
-			token := self.tokenCounter
-			self.tokenCounter++
-			cmd = map[string]interface{}{"0": token, "1": "prepare", "2": sql}
+			ticker := self.getTicker()
+			cmd = map[string]interface{}{"0": ticker, "1": "prepare", "2": sql}
 			err = self.send(cmd)
 			if err != nil {
 				return
 			}
-			f := future{token, self}
+			f := future{ticker, self}
 			res, err2 := f.get()
 			if err2 != nil {
 				err = err2
@@ -161,9 +147,8 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 			self.prepared[sql] = prepared
 		}
 	}
-	token := self.tokenCounter
-	self.tokenCounter++
-	cmd = map[string]interface{}{"0": token, "1": "run", "2": sql, "3": args}
+	ticker := self.getTicker()
+	cmd = map[string]interface{}{"0": ticker, "1": "run", "2": sql, "3": args}
 	if prepared >= 0 {
 		cmd["2"] = prepared
 	}
@@ -171,8 +156,12 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 	if err != nil {
 		return
 	}
-	ret = &future{token, self}
+	ret = &future{ticker, self}
 	return
+}
+
+func (self *connection) getTicker() int {
+	return int(atomic.AddInt64(&self.tickerCounter, 1))
 }
 
 func (self *connection) send(data map[string]interface{}) error {
@@ -184,6 +173,8 @@ func (self *connection) send(data map[string]interface{}) error {
 	binary.LittleEndian.PutUint32(size[:], uint32(len(out)))
 	out = append(size[:], out...)
 	n := len(out)
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 	for n > 0 {
 		n2, err := self.conn.Write(out)
 		if err != nil {
@@ -195,16 +186,15 @@ func (self *connection) send(data map[string]interface{}) error {
 	return nil
 }
 
-func recv(c connection) {
+func recv(c *connection) {
+	defer c.cond.Broadcast()
 	for {
 		var head [4]byte
 		tmp := head[:4]
 		for n, err := c.conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
-				if c.ch != nil {
-					c.ch <- err
-				}
+				c.store.Store(-1, err)
 				return
 			}
 		}
@@ -217,7 +207,7 @@ func recv(c connection) {
 		for n, err := c.conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
-				c.ch <- err
+				c.store.Store(-1, err)
 				return
 			}
 		}
@@ -225,9 +215,10 @@ func recv(c connection) {
 		var err error
 		err = bson.Unmarshal(body, &data)
 		if err != nil {
-			c.ch <- err
+			c.store.Store(-1, err)
 			return
 		}
-		c.ch <- data
+		c.store.Store(data["0"].(int), data)
+		c.cond.Broadcast()
 	}
 }
