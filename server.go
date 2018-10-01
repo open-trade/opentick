@@ -53,31 +53,37 @@ func handleConnection(conn net.Conn) {
 	for {
 		var head [4]byte
 		tmp := head[:4]
-		for n, err := conn.Read(tmp); n < len(tmp); {
-			tmp = tmp[n:]
+		n := len(tmp)
+		for n > 0 {
+			n2, err := conn.Read(tmp)
 			if err != nil {
-				log.Println(err)
+				log.Println(err.Error(), "of connection", conn.RemoteAddr())
 				return
 			}
+			tmp = tmp[n2:]
+			n -= n2
 		}
-		n := binary.LittleEndian.Uint32(head[:])
-		if n == 0 {
+		bodyLen := binary.LittleEndian.Uint32(head[:])
+		if bodyLen == 0 {
 			continue
 		}
-		body := make([]byte, n)
+		body := make([]byte, bodyLen)
 		tmp = body
-		for n, err := conn.Read(tmp); n < len(tmp); {
-			tmp = tmp[n:]
+		n = len(tmp)
+		for n > 0 {
+			n2, err := conn.Read(tmp)
 			if err != nil {
-				log.Println(err)
+				log.Println(err.Error(), "of connection", conn.RemoteAddr())
 				return
 			}
+			tmp = tmp[n2:]
+			n -= n2
 		}
 		var data map[string]interface{}
 		var err error
 		err = bson.Unmarshal(body, &data)
 		if err != nil {
-			log.Println(err)
+			log.Println(err.Error(), "of connection", conn.RemoteAddr())
 			return
 		}
 		var ok bool
@@ -168,6 +174,11 @@ func handleConnection(conn net.Conn) {
 }
 
 func reply(ticker int, res interface{}, ch chan []byte) {
+	defer func() {
+		if err := recover(); err != nil {
+			// log.Println(err)
+		}
+	}()
 	data, err := bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
 	if err != nil {
 		panic(err)
@@ -193,8 +204,8 @@ func writeToConnection(c connection) {
 				if err != nil {
 					return
 				}
-				n -= n2
 				msg = msg[n2:]
+				n -= n2
 			}
 		}
 	}

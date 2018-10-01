@@ -197,8 +197,8 @@ func (self *connection) send(data map[string]interface{}) error {
 		if err != nil {
 			return err
 		}
+		out = out[n2:]
 		n -= n2
-		out = out[2:]
 	}
 	return nil
 }
@@ -215,25 +215,31 @@ func recv(c *connection) {
 	for {
 		var head [4]byte
 		tmp := head[:4]
-		for n, err := c.conn.Read(tmp); n < len(tmp); {
-			tmp = tmp[n:]
+		n := len(tmp)
+		for n > 0 {
+			n2, err := c.conn.Read(tmp)
 			if err != nil {
 				c.notify(-1, err)
 				return
 			}
+			tmp = tmp[n2:]
+			n -= n2
 		}
-		n := binary.LittleEndian.Uint32(head[:])
-		if n == 0 {
+		bodyLen := binary.LittleEndian.Uint32(head[:])
+		if bodyLen == 0 {
 			continue
 		}
-		body := make([]byte, n)
+		body := make([]byte, bodyLen)
 		tmp = body
-		for n, err := c.conn.Read(tmp); n < len(tmp); {
-			tmp = tmp[n:]
+		n = len(tmp)
+		for n > 0 {
+			n2, err := c.conn.Read(tmp)
 			if err != nil {
 				c.notify(-1, err)
 				return
 			}
+			tmp = tmp[n2:]
+			n -= n2
 		}
 		var data map[string]interface{}
 		var err error

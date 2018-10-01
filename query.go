@@ -533,16 +533,22 @@ func resolveWhere(scheme *TableScheme, where *AstExpression) (conds []condition,
 	return
 }
 
+func getInt(v interface{}) (ret int64, ok bool) {
+	if v1, ok1 := v.(int); ok1 {
+		return int64(v1), true
+	}
+	if v1, ok1 := v.(int64); ok1 {
+		return v1, true
+	}
+	return
+}
 func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 	switch col.Type {
 	case TinyInt, SmallInt, Int, BigInt:
 		var v1 int64
-		switch v.(type) {
-		case int64:
-			v1 = v.(int64)
-		case int:
-			v1 = int64(v.(int))
-		default:
+		if v2, ok := getInt(v); ok {
+			v1 = v2
+		} else {
 			goto hasError
 		}
 		switch col.Type {
@@ -601,8 +607,8 @@ func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error)
 		case []interface{}:
 			v1 := v.([]interface{})
 			if len(v1) == 2 {
-				if v3, ok3 := v1[0].(int64); ok3 {
-					if v4, ok4 := v1[1].(int64); ok4 {
+				if v3, ok3 := getInt(v1[0]); ok3 {
+					if v4, ok4 := getInt(v1[1]); ok4 {
 						ret = tuple.Tuple{v3, v4}
 						return
 					}
