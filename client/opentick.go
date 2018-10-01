@@ -29,7 +29,6 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 	m := &sync.Mutex{}
 	c := &connection{
 		conn:      conn,
-		prepared:  make(map[string]int),
 		store:     make(map[int]interface{}),
 		mutexCond: m,
 		cond:      sync.NewCond(m),
@@ -117,7 +116,7 @@ func (self *future) Get() (ret [][]interface{}, err error) {
 type connection struct {
 	conn          net.Conn
 	tickerCounter int64
-	prepared      map[string]int
+	prepared      sync.Map
 	store         map[int]interface{}
 	mutex         sync.Mutex
 	cond          *sync.Cond
@@ -146,8 +145,9 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 				args[i] = []int64{v2.Unix(), int64(v2.Nanosecond())}
 			}
 		}
-		var ok bool
-		if prepared, ok = self.prepared[sql]; !ok {
+		if tmp, ok := self.prepared.Load(sql); ok {
+			prepared = tmp.(int)
+		} else {
 			ticker := self.getTicker()
 			cmd = map[string]interface{}{"0": ticker, "1": "prepare", "2": sql}
 			err = self.send(cmd)
@@ -161,7 +161,7 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 				return
 			}
 			prepared = res.(int)
-			self.prepared[sql] = prepared
+			self.prepared.Store(sql, prepared)
 		}
 	}
 	ticker := self.getTicker()
