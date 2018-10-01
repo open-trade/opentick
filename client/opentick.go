@@ -27,8 +27,13 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 		return
 	}
 	m := &sync.Mutex{}
-	m.Lock()
-	c := &connection{conn: conn, prepared: make(map[string]int), cond: sync.NewCond(m)}
+	c := &connection{
+		conn:      conn,
+		prepared:  make(map[string]int),
+		store:     make(map[int]interface{}),
+		mutexCond: m,
+		cond:      sync.NewCond(m),
+	}
 	go recv(c)
 	ticker := c.getTicker()
 	if dbName != "" {
@@ -54,20 +59,31 @@ type future struct {
 	conn   *connection
 }
 
+func (self *future) getStore(ticker int) (ret interface{}, ok bool) {
+	self.conn.mutex.Lock()
+	defer self.conn.mutex.Unlock()
+	ret, ok = self.conn.store[ticker]
+	if ok && ticker != -1 {
+		delete(self.conn.store, ticker)
+	}
+	return
+}
+
 func (self *future) get() (interface{}, error) {
 	for {
-		if tmp, ok := self.conn.store.Load(self.ticker); ok {
-			self.conn.store.Delete(self.ticker)
+		if tmp, ok := self.getStore(self.ticker); ok {
 			data := tmp.(map[string]interface{})
 			res, _ := data["1"]
 			if str, ok := res.(string); ok {
 				return nil, errors.New(str)
 			}
 			return res, nil
-		} else if tmp, ok := self.conn.store.Load(-1); ok {
+		} else if tmp, ok := self.getStore(-1); ok {
 			return nil, tmp.(error)
 		}
+		self.conn.mutexCond.Lock()
 		self.conn.cond.Wait()
+		self.conn.mutexCond.Unlock()
 	}
 }
 
@@ -102,9 +118,10 @@ type connection struct {
 	conn          net.Conn
 	tickerCounter int64
 	prepared      map[string]int
-	store         sync.Map
+	store         map[int]interface{}
 	mutex         sync.Mutex
 	cond          *sync.Cond
+	mutexCond     *sync.Mutex
 }
 
 func (self *connection) Close() {
@@ -186,6 +203,13 @@ func (self *connection) send(data map[string]interface{}) error {
 	return nil
 }
 
+func (self *connection) notify(ticker int, msg interface{}) {
+	self.mutex.Lock()
+	self.store[ticker] = msg
+	self.cond.Broadcast()
+	self.mutex.Unlock()
+}
+
 func recv(c *connection) {
 	defer c.cond.Broadcast()
 	for {
@@ -194,7 +218,7 @@ func recv(c *connection) {
 		for n, err := c.conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
-				c.store.Store(-1, err)
+				c.notify(-1, err)
 				return
 			}
 		}
@@ -207,7 +231,7 @@ func recv(c *connection) {
 		for n, err := c.conn.Read(tmp); n < len(tmp); {
 			tmp = tmp[n:]
 			if err != nil {
-				c.store.Store(-1, err)
+				c.notify(-1, err)
 				return
 			}
 		}
@@ -215,10 +239,9 @@ func recv(c *connection) {
 		var err error
 		err = bson.Unmarshal(body, &data)
 		if err != nil {
-			c.store.Store(-1, err)
+			c.notify(-1, err)
 			return
 		}
-		c.store.Store(data["0"].(int), data)
-		c.cond.Broadcast()
+		c.notify(data["0"].(int), data)
 	}
 }

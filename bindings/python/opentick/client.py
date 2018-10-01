@@ -6,18 +6,20 @@ import sys
 import socket
 import struct
 from six.moves import xrange
+import six
 from bson import BSON
-import atexit
 import threading
 
 utc_start = datetime.datetime.fromtimestamp(0)
 
+class Error(RuntimeError):
+  pass
 
-def connect(addr, port, db_name):
+
+def connect(addr, port, db_name=''):
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  ock.connect(addr, port)
+  sock.connect((addr, port))
   conn = Connection(sock, db_name)
-  conn.start()
   return conn
 
 
@@ -32,19 +34,25 @@ class Connection(threading.Thread):
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
     self._store = {}
+    self.start()
     if db_name:
-      ticker = self.get_ticker()
+      ticker = self.__get_ticker()
       cmd = {'0': ticker, '1': 'use', '2': db_name}
-      self.send(cmd)
-      Future(ticker, self).get()
+      self.__send(cmd)
+      try:
+        Future(ticker, self).get()
+      except Error, e:
+        self.close()
+        raise e
 
   def close(self):
+    self.__sock.shutdown(socket.SHUT_RDWR)
     self.__sock.close()
     self.join()
 
   def execute(self, sql, *args):
     fut = self.execute_async(sql, *args)
-    return fut.Get()
+    return fut.get()
 
   def execute_async(self, sql, *args):
     prepared = None
@@ -56,63 +64,64 @@ class Connection(threading.Thread):
           args[i] = (int(s), int(s * 1000000) % 1000000)
       prepared = self.__prepared.get(sql)
       if prepared != None:
-        ticker = self.get_ticker()
+        ticker = self.__get_ticker()
         cmd = {'0': ticker, '1': 'prepare', '2': sql}
-        self.send(cmd)
+        self.__send(cmd)
         self.prepared[sql] = Future(ticker, self).get()
-    ticker = self.get_ticker()
+    ticker = self.__get_ticker()
     cmd = {'0': ticker, '1': 'run', '2': sql, '3': args}
-    if prepared == None:
+    if prepared != None:
       cmd['2'] = prepared
-    self.send(cmd)
+    self.__send(cmd)
     f = Future(ticker, self)
     return f
 
+  def __notify(self, ticker, msg):
+    self._mutex.acquire()
+    self._store[ticker] = msg
+    self._cond.acquire()
+    self._cond.notify_all()
+    self._cond.release()
+    self._mutex.release()
+
   def run(self):
     while True:
-      try:
-        n = 4
-        head = ''
-        while n > 0:
-          try:
-            got = self.__sock.recv(n)
-          except socket.error as e:
-            self._mutex.acquire()
-            self._store[-1] = e
-            self._mutex.release()
-            return
-          if not got:
-            return
-          n -= len(got)
-          head += got
-        assert (len(head) == 4)
-        n = struct.unpack('<I', head)[0]
-        body = ''
-        while n > 0:
-          try:
-            got = self.__sock.recv(n)
-          except socket.error as e:
-            self._mutex.acquire()
-            self._store[-1] = e
-            self._mutex.release()
-            return
-          if not got:
-            return
-          n -= len(got)
-          body += got
-        msg = BSON.decode(body)
-        self._mutex.acquire()
-        self._store[msg['0']] = msg
-        self._cond.notify_all()
-        self._mutex.release()
-      except socket.error as e:
-        if e.errno != 11:  # not timeout
-          pass
+      n = 4
+      head = ''
+      while n > 0:
+        try:
+          got = self.__sock.recv(n)
+        except socket.error as e:
+          if e.errno == 11:  # timeout
+            continue 
+          self.__notify(-1, e)
+          return
+        if not got:
+          return
+        n -= len(got)
+        head += got
+      assert (len(head) == 4)
+      n = struct.unpack('<I', head)[0]
+      body = ''
+      while n > 0:
+        try:
+          got = self.__sock.recv(n)
+        except socket.error as e:
+          if e.errno == 11:  # timeout
+            continue 
+          self.__notify(-1, e)
+          return
+        if not got:
+          return
+        n -= len(got)
+        body += got
+      msg = BSON(body).decode()
+      self.__notify(msg['0'], msg)
 
-  def __send(msg):
+  def __send(self, msg):
     out = BSON.encode(msg)
     n = len(out)
-    out = struct.unpack('<I', n) + out
+    out = struct.pack('<I', n) + out
     self._mutex.acquire()
     while n > 0:
       try:
@@ -124,6 +133,13 @@ class Connection(threading.Thread):
       n -= n2
     self._mutex.release()
 
+  def __get_ticker(self):
+    self._mutex.acquire()
+    n = self.__ticker_counter
+    self.__ticker_counter += 1
+    self._mutex.release()
+    return n
+
 
 class Future(object):
 
@@ -131,16 +147,21 @@ class Future(object):
     self.__ticker = ticker
     self.__conn = conn
 
+  def __get_store(self, ticker):
+    self.__conn._mutex.acquire()
+    out = self.__conn._store.get(ticker)
+    if out != None and ticker != -1:
+      del self.__conn._store[self.__ticker]
+    self.__conn._mutex.release()
+    return out
+
   def get(self):
     while True:
-      self.__conn._mutex.acquire()
-      msg = self.__conn._store.get(self.__ticker)
+      msg = self.__get_store(self.__ticker)
       if msg != None:
-        del self.__conn._store[self.__ticker]
-        self.__conn._mutex.release()
         msg = msg['1']
-        if isinstance(msg, str):
-          raise msg
+        if isinstance(msg, six.string_types):
+          raise Error(msg)
         if isinstance(msg, list):
           for rec in msg:
             if isinstance(rec, list):
@@ -150,9 +171,9 @@ class Future(object):
                   rec[i] = datetime.datetime.fromtimestamp(
                       v[0]) + datetime.timedelta(microseconds=v[1] / 1000)
         return msg
-      err = self._conn._store.get(-1)
+      err = self.__get_store(-1)
       if err:
-        self.__conn._mutex.release()
         raise err
-      self.__conn._mutex.release()
+      self.__conn._cond.acquire()
       self.__conn._cond.wait()
+      self.__conn._cond.release()
