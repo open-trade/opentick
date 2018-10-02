@@ -79,58 +79,58 @@ func handleConnection(conn net.Conn) {
 			tmp = tmp[n2:]
 			n -= n2
 		}
-		var data map[string]interface{}
-		var err error
-		err = bson.Unmarshal(body, &data)
-		if err != nil {
-			log.Println(err.Error(), "of connection", conn.RemoteAddr())
-			return
-		}
-		var ok bool
-		var ticker int
-		var cmd string
-		var sql string
-		var preparedId int
-		var ast *Ast
-		var res interface{}
-		var args []interface{}
-		var exists bool
-		var stmt interface{}
-		ticker, ok = data["0"].(int)
-		if !ok {
-			res = fmt.Sprint("Invalid ticker, expected int, got ", data["0"])
-			goto reply
-		}
-		cmd, ok = data["1"].(string)
-		if !ok {
-			res = fmt.Sprint("Invalid command, exepcted string, got ", data["1"])
-			goto reply
-		}
-		if len(data) > 3 && data["3"] != nil {
-			args, ok = data["3"].([]interface{})
+		go func() {
+			var data map[string]interface{}
+			var err error
+			var ok bool
+			var ticker int
+			var cmd string
+			var sql string
+			var preparedId int
+			var ast *Ast
+			var res interface{}
+			var args []interface{}
+			var exists bool
+			var stmt interface{}
+			err = bson.Unmarshal(body, &data)
+			if err != nil {
+				res = "Invalid bson: " + err.Error()
+				goto reply
+			}
+			ticker, ok = data["0"].(int)
 			if !ok {
-				res = fmt.Sprint("Invalid arguments, expected array, got ", data["3"])
+				res = fmt.Sprint("Invalid ticker, expected int, got ", data["0"])
 				goto reply
 			}
-		}
-		sql, ok = data["2"].(string)
-		if !ok {
-			preparedId, ok = data["2"].(int)
+			cmd, ok = data["1"].(string)
 			if !ok {
-				res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
+				res = fmt.Sprint("Invalid command, exepcted string, got ", data["1"])
 				goto reply
 			}
-			if preparedId >= len(prepared) {
-				res = fmt.Sprint("Invalid preparedId ", preparedId)
+			if len(data) > 3 && data["3"] != nil {
+				args, ok = data["3"].([]interface{})
+				if !ok {
+					res = fmt.Sprint("Invalid arguments, expected array, got ", data["3"])
+					goto reply
+				}
+			}
+			sql, ok = data["2"].(string)
+			if !ok {
+				preparedId, ok = data["2"].(int)
+				if !ok {
+					res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
+					goto reply
+				}
+				if preparedId >= len(prepared) {
+					res = fmt.Sprint("Invalid preparedId ", preparedId)
+					goto reply
+				}
+				stmt = prepared[preparedId]
+			} else if sql == "" {
+				res = "Empty sql"
 				goto reply
 			}
-			stmt = prepared[preparedId]
-		} else if sql == "" {
-			res = "Empty sql"
-			goto reply
-		}
-		if cmd == "run" {
-			go func() {
+			if cmd == "run" {
 				if sql != "" {
 					res, err = Execute(defaultDB, dbName, sql, args)
 				} else {
@@ -139,37 +139,35 @@ func handleConnection(conn net.Conn) {
 				if err != nil {
 					res = err.Error()
 				}
-				reply(ticker, res, ch)
-			}()
-			continue
-		} else if cmd == "prepare" {
-			ast, err = Parse(sql)
-			if err != nil {
-				res = err.Error()
-				goto reply
+			} else if cmd == "prepare" {
+				ast, err = Parse(sql)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				res, err = Resolve(defaultDB, dbName, ast)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				prepared = append(prepared, res)
+				res = len(prepared) - 1
+			} else if cmd == "use" {
+				dbName = sql
+				exists, err = HasDatabase(defaultDB, dbName)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				if !exists {
+					res = dbName + " does not exist"
+				}
+			} else {
+				res = "Invalid command " + cmd
 			}
-			res, err = Resolve(defaultDB, dbName, ast)
-			if err != nil {
-				res = err.Error()
-				goto reply
-			}
-			prepared = append(prepared, res)
-			res = len(prepared) - 1
-		} else if cmd == "use" {
-			dbName = sql
-			exists, err = HasDatabase(defaultDB, dbName)
-			if err != nil {
-				res = err.Error()
-				goto reply
-			}
-			if !exists {
-				res = dbName + " does not exist"
-			}
-		} else {
-			res = "Invalid command " + cmd
-		}
-	reply:
-		reply(ticker, res, ch)
+		reply:
+			reply(ticker, res, ch)
+		}()
 	}
 }
 
