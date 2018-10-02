@@ -87,12 +87,10 @@ class Connection(threading.Thread):
     return f
 
   def __notify(self, ticker, msg):
-    self._mutex.acquire()
-    self._store[ticker] = msg
     self._cond.acquire()
+    self._store[ticker] = msg
     self._cond.notify_all()
     self._cond.release()
-    self._mutex.release()
 
   def run(self):
     while True:
@@ -167,24 +165,29 @@ class Future(object):
     return out
 
   def get(self):
+    msg = None
+    err = None
+    self.__conn._cond.acquire()
     while True:
       msg = self.__get_store(self.__ticker)
-      if msg != None:
-        msg = msg['1']
-        if isinstance(msg, six.string_types):
-          raise Error(msg)
-        if isinstance(msg, list):
-          for rec in msg:
-            if isinstance(rec, list):
-              for i in xrange(len(rec)):
-                v = rec[i]
-                if isinstance(v, list) and len(v) == 2:
-                  rec[i] = datetime.datetime.fromtimestamp(
-                      v[0]) + datetime.timedelta(microseconds=v[1] / 1000)
-        return msg
       err = self.__get_store(-1)
-      if err:
-        raise err
-      self.__conn._cond.acquire()
-      self.__conn._cond.wait()
-      self.__conn._cond.release()
+      if msg == None and err == None:
+        self.__conn._cond.wait()
+      else:
+        break
+    self.__conn._cond.release()
+    if msg != None:
+      msg = msg['1']
+      if isinstance(msg, six.string_types):
+        raise Error(msg)
+      if isinstance(msg, list):
+        for rec in msg:
+          if isinstance(rec, list):
+            for i in xrange(len(rec)):
+              v = rec[i]
+              if isinstance(v, list) and len(v) == 2:
+                rec[i] = datetime.datetime.fromtimestamp(
+                    v[0]) + datetime.timedelta(microseconds=v[1] / 1000)
+      return msg
+    if err:
+      raise err

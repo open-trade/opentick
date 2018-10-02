@@ -58,31 +58,22 @@ type future struct {
 	conn   *connection
 }
 
-func (self *future) getStore(ticker int) (ret interface{}, ok bool) {
-	self.conn.mutex.Lock()
-	defer self.conn.mutex.Unlock()
-	ret, ok = self.conn.store[ticker]
-	if ok && ticker != -1 {
-		delete(self.conn.store, ticker)
-	}
-	return
-}
-
 func (self *future) get() (interface{}, error) {
+	self.conn.mutexCond.Lock()
+	defer self.conn.mutexCond.Unlock()
 	for {
-		if tmp, ok := self.getStore(self.ticker); ok {
+		if tmp, ok := self.conn.store[self.ticker]; ok {
+			delete(self.conn.store, self.ticker)
 			data := tmp.(map[string]interface{})
 			res, _ := data["1"]
 			if str, ok := res.(string); ok {
 				return nil, errors.New(str)
 			}
 			return res, nil
-		} else if tmp, ok := self.getStore(-1); ok {
+		} else if tmp, ok := self.conn.store[-1]; ok {
 			return nil, tmp.(error)
 		}
-		self.conn.mutexCond.Lock()
 		self.conn.cond.Wait()
-		self.conn.mutexCond.Unlock()
 	}
 }
 
@@ -204,10 +195,10 @@ func (self *connection) send(data map[string]interface{}) error {
 }
 
 func (self *connection) notify(ticker int, msg interface{}) {
-	self.mutex.Lock()
+	self.mutexCond.Lock()
 	self.store[ticker] = msg
 	self.cond.Broadcast()
-	self.mutex.Unlock()
+	self.mutexCond.Unlock()
 }
 
 func recv(c *connection) {
