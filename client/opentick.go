@@ -18,6 +18,8 @@ type Future interface {
 type Connection interface {
 	Execute(sql string, args ...interface{}) (ret [][]interface{}, err error)
 	ExecuteAsync(sql string, args ...interface{}) (Future, error)
+	BatchInsert(sql string, argsArray [][]interface{}) (err error)
+	BatchInsertAsync(sql string, argsArray [][]interface{}) (Future, error)
 	Close()
 }
 
@@ -118,6 +120,39 @@ func (self *connection) Close() {
 	self.conn.Close()
 }
 
+func (self *connection) BatchInsert(sql string, argsArray [][]interface{}) (err error) {
+	var fut Future
+	fut, err = self.BatchInsertAsync(sql, argsArray)
+	if err != nil {
+		return
+	}
+	_, err = fut.Get()
+	return
+}
+
+func (self *connection) BatchInsertAsync(sql string, argsArray [][]interface{}) (fut Future, err error) {
+	if len(argsArray) == 0 {
+		err = errors.New("argsArray required")
+		return
+	}
+	for _, args := range argsArray {
+		convertTimestamp(args)
+	}
+	var prepared int
+	prepared, err = self.prepare(sql)
+	if err != nil {
+		return
+	}
+	ticker := self.getTicker()
+	cmd := map[string]interface{}{"0": ticker, "1": "batch", "2": prepared, "3": argsArray}
+	err = self.send(cmd)
+	if err != nil {
+		return
+	}
+	fut = &future{ticker, self}
+	return
+}
+
 func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interface{}, err error) {
 	var fut Future
 	fut, err = self.ExecuteAsync(sql, args...)
@@ -127,32 +162,44 @@ func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interf
 	return fut.Get()
 }
 
+func (self *connection) prepare(sql string) (prepared int, err error) {
+	if tmp, ok := self.prepared.Load(sql); ok {
+		prepared = tmp.(int)
+	} else {
+		ticker := self.getTicker()
+		cmd := map[string]interface{}{"0": ticker, "1": "prepare", "2": sql}
+		err = self.send(cmd)
+		if err != nil {
+			return
+		}
+		f := future{ticker, self}
+		res, err2 := f.get()
+		if err2 != nil {
+			err = err2
+			return
+		}
+		prepared = res.(int)
+		self.prepared.Store(sql, prepared)
+	}
+	return
+}
+
+func convertTimestamp(args []interface{}) {
+	for i, v := range args {
+		if v2, ok := v.(time.Time); ok {
+			args[i] = []int64{v2.Unix(), int64(v2.Nanosecond())}
+		}
+	}
+}
+
 func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Future, err error) {
 	prepared := -1
 	var cmd map[string]interface{}
 	if len(args) > 0 {
-		for i, v := range args {
-			if v2, ok := v.(time.Time); ok {
-				args[i] = []int64{v2.Unix(), int64(v2.Nanosecond())}
-			}
-		}
-		if tmp, ok := self.prepared.Load(sql); ok {
-			prepared = tmp.(int)
-		} else {
-			ticker := self.getTicker()
-			cmd = map[string]interface{}{"0": ticker, "1": "prepare", "2": sql}
-			err = self.send(cmd)
-			if err != nil {
-				return
-			}
-			f := future{ticker, self}
-			res, err2 := f.get()
-			if err2 != nil {
-				err = err2
-				return
-			}
-			prepared = res.(int)
-			self.prepared.Store(sql, prepared)
+		convertTimestamp(args)
+		prepared, err = self.prepare(sql)
+		if err != nil {
+			return
 		}
 	}
 	ticker := self.getTicker()
