@@ -139,6 +139,34 @@ func handleConnection(conn net.Conn) {
 				if err != nil {
 					res = err.Error()
 				}
+			} else if cmd == "batch" {
+				if sql != "" {
+					res = "Batch command must be prepared first"
+					goto reply
+				}
+				stmt2, ok2 := stmt.(insertStmt)
+				if !ok2 {
+					res = "Only batch insert supported"
+					goto reply
+				}
+				argsArray := make([][]interface{}, len(args))
+				for i, a := range args {
+					var a2 []interface{}
+					a2, ok := a.([]interface{})
+					if !ok {
+						res = "Arguments must be array of array"
+						goto reply
+					}
+					if i != 0 && len(a2) != len(argsArray[0]) {
+						res = "All array must the same size"
+						goto reply
+					}
+					argsArray[i] = a2
+				}
+				err = BatchInsert(defaultDB, &stmt2, argsArray)
+				if err != nil {
+					res = err.Error()
+				}
 			} else if cmd == "prepare" {
 				ast, err = Parse(sql)
 				if err != nil {

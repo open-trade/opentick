@@ -250,7 +250,22 @@ func executeWhere(db fdb.Transactor, stmt whereStmt, args []interface{}) (res in
 	return
 }
 
-func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err error) {
+func BatchInsert(db fdb.Transactor, stmt *insertStmt, argsArray [][]interface{}) (err error) {
+	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
+		for _, args := range argsArray {
+			var parts [2][]tuple.TupleElement
+			err = prepareInsert(stmt, args, &parts)
+			if err != nil {
+				return
+			}
+			tr.Set(stmt.Scheme.Dir.Pack(tuple.Tuple(parts[0])), tuple.Tuple(parts[1]).Pack())
+		}
+		return
+	})
+	return
+}
+
+func prepareInsert(stmt *insertStmt, args []interface{}, parts *[2][]tuple.TupleElement) (err error) {
 	if stmt.NumPlaceholders != len(args) {
 		err = errors.New("Expected " + strconv.FormatInt(int64(stmt.NumPlaceholders), 10) + " arguments, got " + strconv.FormatInt(int64(len(args)), 10))
 		return
@@ -268,7 +283,6 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 			}
 		}
 	}
-	var parts [2][]tuple.TupleElement
 	for i, cols := range [2]([]*TableColDef){stmt.Scheme.Keys, stmt.Scheme.Values} {
 		parts[i] = make([]tuple.TupleElement, len(cols))
 		for _, col := range cols {
@@ -276,11 +290,12 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 			parts[i][col.Pos] = tuple.TupleElement(v)
 		}
 	}
-	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
-		tr.Set(stmt.Scheme.Dir.Pack(tuple.Tuple(parts[0])), tuple.Tuple(parts[1]).Pack())
-		return
-	})
 	return
+}
+
+func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err error) {
+	argsArray := [1][]interface{}{args}
+	return BatchInsert(db, stmt, argsArray[:])
 }
 
 func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
