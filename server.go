@@ -6,14 +6,27 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"gopkg.in/mgo.v2/bson"
 	"log"
+	"math/rand"
 	"net"
 )
 
-var defaultDB fdb.Transactor
+var defaultDBs []fdb.Transactor
 
-func StartServer(addr string) error {
+var sNumDatabaseConn = 1
+
+func getDB() fdb.Transactor {
+	return defaultDBs[rand.Intn(sNumDatabaseConn)]
+}
+
+func StartServer(addr string, numDatabaseConn int) error {
 	fdb.MustAPIVersion(FdbVersion)
-	defaultDB = fdb.MustOpenDefault()
+	if numDatabaseConn > sNumDatabaseConn {
+		sNumDatabaseConn = numDatabaseConn
+	}
+	defaultDBs = make([]fdb.Transactor, sNumDatabaseConn)
+	for i := 0; i < sNumDatabaseConn; i++ {
+		defaultDBs[i] = fdb.MustOpenDefault()
+	}
 	ln, err := net.Listen("tcp", addr)
 	log.Println("Listening on " + addr)
 	if err != nil {
@@ -132,9 +145,9 @@ func handleConnection(conn net.Conn) {
 			}
 			if cmd == "run" {
 				if sql != "" {
-					res, err = Execute(defaultDB, dbName, sql, args)
+					res, err = Execute(getDB(), dbName, sql, args)
 				} else {
-					res, err = ExecuteStmt(defaultDB, stmt, args)
+					res, err = ExecuteStmt(getDB(), stmt, args)
 				}
 				if err != nil {
 					res = err.Error()
@@ -163,7 +176,7 @@ func handleConnection(conn net.Conn) {
 					}
 					argsArray[i] = a2
 				}
-				err = BatchInsert(defaultDB, &stmt2, argsArray)
+				err = BatchInsert(getDB(), &stmt2, argsArray)
 				if err != nil {
 					res = err.Error()
 				}
@@ -173,7 +186,7 @@ func handleConnection(conn net.Conn) {
 					res = err.Error()
 					goto reply
 				}
-				res, err = Resolve(defaultDB, dbName, ast)
+				res, err = Resolve(getDB(), dbName, ast)
 				if err != nil {
 					res = err.Error()
 					goto reply
@@ -182,7 +195,7 @@ func handleConnection(conn net.Conn) {
 				res = len(prepared) - 1
 			} else if cmd == "use" {
 				dbName = sql
-				exists, err = HasDatabase(defaultDB, dbName)
+				exists, err = HasDatabase(getDB(), dbName)
 				if err != nil {
 					res = err.Error()
 					goto reply

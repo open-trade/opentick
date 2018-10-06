@@ -11,7 +11,7 @@ import (
 
 func Test_Server(t *testing.T) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "")
 	assert.Equal(t, nil, err)
@@ -57,7 +57,7 @@ func Test_Server(t *testing.T) {
 
 func Benchmark_client_insert_sync(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
@@ -76,14 +76,14 @@ func Benchmark_client_insert_sync(b *testing.B) {
 
 func Benchmark_insert_not_prepared(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
 	_, err = conn.Execute("create table test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double,vwap double, primary key(sec, interval, tm))")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = Execute(defaultDB, "", "insert into test.test(sec, interval, tm, open) values(?, ?, ?, ?)", []interface{}{1, 2, i, i})
+		_, err = Execute(getDB(), "", "insert into test.test(sec, interval, tm, open) values(?, ?, ?, ?)", []interface{}{1, 2, i, i})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -93,16 +93,16 @@ func Benchmark_insert_not_prepared(b *testing.B) {
 
 func Benchmark_insert_prepared(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":" + strconv.FormatInt(int64(port), 10))
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
 	_, err = conn.Execute("create table test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double,vwap double, primary key(sec, interval, tm))")
 	ast, _ := Parse("insert into test.test(sec, interval, tm, open) values(?, ?, ?, ?)")
-	stmt, _ := Resolve(defaultDB, "", ast)
+	stmt, _ := Resolve(getDB(), "", ast)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = ExecuteStmt(defaultDB, stmt, []interface{}{1, 2, i, i})
+		_, err = ExecuteStmt(getDB(), stmt, []interface{}{1, 2, i, i})
 		if err != nil {
 			b.Fatal(err)
 		}
