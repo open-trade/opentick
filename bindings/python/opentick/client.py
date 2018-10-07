@@ -51,14 +51,17 @@ class Connection(threading.Thread):
     self._store = {}
     self.start()
     if db_name:
-      ticker = self.__get_ticker()
-      cmd = {'0': ticker, '1': 'use', '2': db_name}
-      self.__send(cmd)
-      try:
-        Future(ticker, self).get()
-      except Error as e:
-        self.close()
-        raise e
+      self.use(db_name)
+
+  def use(self, db_name):
+    ticker = self.__get_ticker()
+    cmd = {'0': ticker, '1': 'use', '2': db_name}
+    self.__send(cmd)
+    try:
+      Future(ticker, self).get()
+    except Error as e:
+      self.close()
+      raise e
 
   def close(self):
     try:

@@ -6,7 +6,9 @@ from six.moves import xrange
 
 conn = None
 try:
-  conn = opentick.connect('', 1116, 'test')
+  conn = opentick.connect('', 1116)
+  res = conn.execute('create database if not exists test')
+  conn.use('test')
   res = conn.execute(
       'create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double, vwap double, primary key(sec, interval, tm))'
   )

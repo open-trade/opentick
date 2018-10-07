@@ -32,7 +32,7 @@ func Test_Split(t *testing.T) {
 
 func Test_Server(t *testing.T) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), "", 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "")
 	assert.Equal(t, nil, err)
@@ -96,7 +96,7 @@ func Test_Server(t *testing.T) {
 
 func Benchmark_client_insert_sync(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), "", 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
@@ -115,7 +115,7 @@ func Benchmark_client_insert_sync(b *testing.B) {
 
 func Benchmark_insert_not_prepared(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), "", 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")
@@ -132,7 +132,7 @@ func Benchmark_insert_not_prepared(b *testing.B) {
 
 func Benchmark_insert_prepared(b *testing.B) {
 	port, _ := freeport.GetFreePort()
-	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)
+	go StartServer(":"+strconv.FormatInt(int64(port), 10), "", 1)
 	time.Sleep(100 * time.Millisecond)
 	conn, err := client.Connect("", port, "test")
 	_, err = conn.Execute("create database if not exists test")

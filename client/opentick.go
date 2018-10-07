@@ -17,6 +17,7 @@ type Future interface {
 }
 
 type Connection interface {
+	Use(dbName string) (err error)
 	Execute(sql string, args ...interface{}) (ret [][]interface{}, err error)
 	ExecuteAsync(sql string, args ...interface{}) (Future, error)
 	BatchInsert(sql string, argsArray [][]interface{}) (err error)
@@ -37,18 +38,9 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 		cond:      sync.NewCond(m),
 	}
 	go recv(c)
-	ticker := c.getTicker()
 	if dbName != "" {
-		cmd := map[string]interface{}{"0": ticker, "1": "use", "2": dbName}
-		err = c.send(cmd)
+		err = c.Use(dbName)
 		if err != nil {
-			c.Close()
-			return
-		}
-		f := future{ticker, c}
-		_, err = f.get()
-		if err != nil {
-			c.Close()
 			return
 		}
 	}
@@ -183,6 +175,23 @@ type connection struct {
 	mutex         sync.Mutex
 	cond          *sync.Cond
 	mutexCond     *sync.Mutex
+}
+
+func (self *connection) Use(dbName string) (err error) {
+	ticker := self.getTicker()
+	cmd := map[string]interface{}{"0": ticker, "1": "use", "2": dbName}
+	err = self.send(cmd)
+	if err != nil {
+		self.Close()
+		return
+	}
+	f := future{ticker, self}
+	_, err = f.get()
+	if err != nil {
+		self.Close()
+		return
+	}
+	return
 }
 
 func (self *connection) Close() {
