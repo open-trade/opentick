@@ -18,14 +18,19 @@ func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, numDatabaseConn int) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn int) error {
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
 		sNumDatabaseConn = numDatabaseConn
 	}
 	defaultDBs = make([]fdb.Transactor, sNumDatabaseConn)
 	for i := 0; i < sNumDatabaseConn; i++ {
-		defaultDBs[i] = fdb.MustOpenDefault()
+		if fdbClusterFile == "" {
+			defaultDBs[i] = fdb.MustOpenDefault()
+		} else {
+			// In the current release of fdb, the database name must be []byte("DB").
+			defaultDBs[i] = fdb.MustOpen(fdbClusterFile, []byte("DB"))
+		}
 	}
 	ln, err := net.Listen("tcp", addr)
 	log.Println("Listening on " + addr)
