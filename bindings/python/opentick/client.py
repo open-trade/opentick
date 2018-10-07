@@ -31,7 +31,7 @@ def split_range(start, end, num_parts):
   if isinstance(start, int):
     d = int(d)
   for i in xrange(num_parts):
-    tmp2 = start + d
+    tmp2 = tmp + d
     out.append([tmp, tmp2])
     tmp = tmp2
   out[-1][-1] = end

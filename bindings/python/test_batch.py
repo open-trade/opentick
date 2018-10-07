@@ -40,17 +40,20 @@ try:
       res += conn.execute('select * from test where sec=1 and interval=? and tm>=? and tm<=?', j,
               opentick.split_range(tm, tm2, 10))
     now4 = datetime.datetime.now()
-    print(str(now4), str(now4- now3), len(res), 'retrieved')
-    res = []
+    print(str(now4), str(now4- now3), len(res), 'retrieved with ranges')
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
     now5 = datetime.datetime.now()
-    print(str(now5), str(now5- now4), len(res), 'async retrieved done')
+    print(str(now5), str(now5- now4), 'async done')
+    res = []
     for f in futs:
       res += f.get()
     now6 = datetime.datetime.now()
-    print(str(now6), str(now6 - now4), len(res), 'retrieved')
+    print(str(now6), str(now6 - now4), len(res), 'retrieved with async')
+    res = conn.execute('select * from test where sec=1')
+    now7 = datetime.datetime.now()
+    print(str(now7), str(now7 - now4), len(res), 'retrieved with one sync')
 except opentick.Error as e:
   print(e)
 finally:
