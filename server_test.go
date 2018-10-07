@@ -52,6 +52,21 @@ func Test_Server(t *testing.T) {
 	res, err = conn.Execute("select * from test where sec=? and interval=?", 1, 2)
 	assert.Equal(t, 1, len(res))
 	assert.Equal(t, float64(4), res[0][3])
+	argsArray := [][]interface{}{[]interface{}{tm, 5}, []interface{}{2}}
+	err = conn.BatchInsert("insert into test(sec, interval, tm, open) values(?, ?, ?, ?)", argsArray)
+	assert.Equal(t, "All array must the same size", err.Error())
+	argsArray = [][]interface{}{[]interface{}{tm, 5}, []interface{}{2., 3}}
+	err = conn.BatchInsert("insert into test(sec, interval, tm, open) values(?, ?, ?, ?)", argsArray)
+	assert.Equal(t, "Expected 4 arguments, got 2", err.Error())
+	argsArray = [][]interface{}{[]interface{}{tm, 5}, []interface{}{2., 3}}
+	err = conn.BatchInsert("insert into test(sec, interval, tm, open) values(1, 2, ?, ?)", argsArray)
+	assert.Equal(t, "Invalid float64 value (2) for \"tm\" of Timestamp", err.Error())
+	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
+	assert.Equal(t, 0, len(res))
+	argsArray = [][]interface{}{[]interface{}{tm, 5}, []interface{}{tm, 3}}
+	err = conn.BatchInsert("insert into test(sec, interval, tm, open) values(1, 2, ?, ?)", argsArray)
+	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
+	assert.Equal(t, float64(3), res[0][0])
 	conn.Execute("drop table test")
 }
 
