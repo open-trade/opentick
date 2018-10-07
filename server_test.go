@@ -9,6 +9,27 @@ import (
 	"time"
 )
 
+func Test_Split(t *testing.T) {
+	a := time.Date(1984, time.November, 3, 13, 0, 0, 0, time.UTC)
+	b := time.Date(2018, time.November, 10, 18, 0, 0, 1, time.UTC)
+	c := client.SplitRange(a, b, 10)
+	a1 := a.Add(time.Duration(b.Sub(a).Nanoseconds() / int64(10)))
+	assert.Equal(t, a, c[0][0])
+	assert.Equal(t, a1, c[0][1])
+	b0 := a.Add(time.Duration(b.Sub(a).Nanoseconds() / int64(10) * int64(9)))
+	assert.Equal(t, b0, c[9][0])
+	c2 := client.SplitRange(100, 1000, 11)
+	assert.Equal(t, 100+(1000-100)/11*10, c2[10][0])
+	assert.Equal(t, 100+(1000-100)/11, c2[0][1])
+	assert.Equal(t, 100+(1000-100)/11*5, c2[5][0])
+	assert.Equal(t, 100+(1000-100)/11*6, c2[5][1])
+	c3 := client.SplitRange(100., 1000., 11)
+	assert.Equal(t, 100.+(1000.-100.)/11*10, c3[10][0])
+	assert.Equal(t, 100.+(1000.-100.)/11, c3[0][1])
+	assert.Equal(t, 100.+(1000.-100.)/11*5, c3[5][0])
+	assert.Equal(t, 100.+(1000.-100.)/11*6, c3[5][1])
+}
+
 func Test_Server(t *testing.T) {
 	port, _ := freeport.GetFreePort()
 	go StartServer(":"+strconv.FormatInt(int64(port), 10), 1)

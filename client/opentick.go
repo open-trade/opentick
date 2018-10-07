@@ -5,6 +5,7 @@ import (
 	"errors"
 	"gopkg.in/mgo.v2/bson"
 	"net"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -52,6 +53,74 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 		}
 	}
 	ret = c
+	return
+}
+
+type RangeArray [][2]interface{}
+
+func SplitRange(start interface{}, end interface{}, numParts int) (parts [][2]interface{}) {
+	if reflect.TypeOf(start) != reflect.TypeOf(end) || numParts <= 1 {
+		return
+	}
+
+	switch start.(type) {
+	case int:
+		a := start.(int)
+		b := end.(int)
+		d := (b - a) / numParts
+		for i := 0; i < numParts; i++ {
+			tmp := a + i*d
+			parts = append(parts, [2]interface{}{tmp, tmp + d})
+		}
+		parts[numParts-1][1] = b
+	case int64:
+		a := start.(int64)
+		b := end.(int64)
+		d := (b - a) / int64(numParts)
+		for i := 0; i < numParts; i++ {
+			tmp := a + int64(i)*d
+			parts = append(parts, [2]interface{}{tmp, tmp + d})
+		}
+		parts[numParts-1][1] = b
+	case int32:
+		a := start.(int32)
+		b := end.(int32)
+		d := (b - a) / int32(numParts)
+		for i := 0; i < numParts; i++ {
+			tmp := a + int32(i)*d
+			parts = append(parts, [2]interface{}{tmp, tmp + d})
+		}
+		parts[numParts-1][1] = b
+	case float64:
+		a := start.(float64)
+		b := end.(float64)
+		d := (b - a) / float64(numParts)
+		for i := 0; i < numParts; i++ {
+			tmp := a + float64(i)*d
+			parts = append(parts, [2]interface{}{tmp, tmp + d})
+		}
+		parts[numParts-1][1] = b
+	case float32:
+		a := start.(float32)
+		b := end.(float32)
+		d := (b - a) / float32(numParts)
+		for i := 0; i < numParts; i++ {
+			tmp := a + float32(i)*d
+			parts = append(parts, [2]interface{}{tmp, tmp + d})
+		}
+		parts[numParts-1][1] = b
+	case time.Time:
+		a := start.(time.Time)
+		b := end.(time.Time)
+		d := time.Duration(b.Sub(a).Nanoseconds() / int64(numParts))
+		tmp := a
+		for i := 0; i < numParts; i++ {
+			tmp1 := tmp.Add(d)
+			parts = append(parts, [2]interface{}{tmp, tmp1})
+			tmp = tmp1
+		}
+		parts[numParts-1][1] = b
+	}
 	return
 }
 
@@ -187,7 +256,7 @@ func (self *connection) prepare(sql string) (prepared int, err error) {
 func convertTimestamp(args []interface{}) {
 	for i, v := range args {
 		if v2, ok := v.(time.Time); ok {
-			args[i] = []int64{v2.Unix(), int64(v2.Nanosecond())}
+			args[i] = [2]int64{v2.Unix(), int64(v2.Nanosecond())}
 		}
 	}
 }
