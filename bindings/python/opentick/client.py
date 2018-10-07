@@ -24,6 +24,20 @@ def connect(addr, port, db_name=''):
   return conn
 
 
+def split_range(start, end, num_parts):
+  out = []
+  tmp = start
+  d = (end - start) / num_parts
+  if isinstance(start, int):
+    d = int(d)
+  for i in xrange(num_parts):
+    tmp2 = start + d
+    out.append([tmp, tmp2])
+    tmp = tmp2
+  out[-1][-1] = end
+  return out
+
+
 # not thread-safe
 class Connection(threading.Thread):
 
@@ -55,12 +69,19 @@ class Connection(threading.Thread):
     self.join()
 
   def execute(self, sql, *args):
+    if len(args) > 0:
+      if isinstance(args[-1], tuple) or isinstance(args[-1], list):
+        if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
+          return self.__execute_ranges(sql, *args)
     fut = self.execute_async(sql, *args)
     return fut.get()
 
   def execute_async(self, sql, *args):
     prepared = None
     if len(args) > 0:
+      if isinstance(args[-1], tuple) or isinstance(args[-1], list):
+        if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
+         raise Error("RangeArray not supported in execute_async, please use execute instead")
       args = list(args)
       self.__convert_timestamp(args)
       prepared = self.__prepare(sql)
@@ -87,6 +108,21 @@ class Connection(threading.Thread):
     self.__send(cmd)
     f = Future(ticker, self)
     return f
+
+  def __execute_ranges(self, sql, *args):
+    ranges = args[-1]
+    futs = []
+    for r in ranges:
+      args2 = list(args[:-1]) + r
+      futs.append(self.execute_async(sql, *args2))
+    out = []
+    for fut in futs:
+      ret = fut.get()
+      if ret and len(ret) > 0:
+        if len(out) > 0 and out[-1] == ret[0]:
+          ret = ret[1:]
+        out += ret
+    return out
 
   def __convert_timestamp(self, args):
     for i in xrange(len(args)):

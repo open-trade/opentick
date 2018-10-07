@@ -6,8 +6,8 @@ import (
 	// "github.com/pkg/profile"
 )
 
-var addr = flag.String("a,addr", "0.0.0.0:1116", "tcp listen address")
-var n = flag.Int("n,num_foundation_db_connections", 1, "number of connections to underlying FoundationDB")
+var addr = flag.String("addr", "0.0.0.0:1116", "tcp listen address")
+var n = flag.Int("num_foundation_db_connections", 1, "number of connections to underlying FoundationDB")
 
 func main() {
 	// CPU profiling by default

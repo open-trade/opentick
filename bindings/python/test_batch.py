@@ -18,6 +18,7 @@ try:
     print(str(now),)
     n1 = 10
     n2 = 10000
+    tm2 = None
     for j in xrange(n1):
       args_array = []
       for k in xrange(n2):
@@ -34,9 +35,22 @@ try:
       f.get()
     now3 = datetime.datetime.now()
     print(str(now3), str(now3 - now2), i, len(futs), 'all futures get done')
-    res = conn.execute('select * from test where sec=1')
+    res = []
+    for j in range(i+1):
+      res += conn.execute('select * from test where sec=1 and interval=? and tm>=? and tm<=?', j,
+              opentick.split_range(tm, tm2, 10))
     now4 = datetime.datetime.now()
-    print(str(now4), str(now4 - now3), len(res), 'retrieved')
+    print(str(now4), str(now4- now3), len(res), 'retrieved')
+    res = []
+    futs = []
+    for j in range(i+1):
+      futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
+    now5 = datetime.datetime.now()
+    print(str(now5), str(now5- now4), len(res), 'async retrieved done')
+    for f in futs:
+      res += f.get()
+    now6 = datetime.datetime.now()
+    print(str(now6), str(now6 - now4), len(res), 'retrieved')
 except opentick.Error as e:
   print(e)
 finally:
