@@ -9,8 +9,10 @@ from six.moves import xrange
 import six
 from bson import BSON
 import threading
+import pytz
 
-utc_start = datetime.datetime.fromtimestamp(0)
+fromtimestamp = datetime.datetime.fromtimestamp
+utc_start = fromtimestamp(0, pytz.utc)
 
 
 class Error(RuntimeError):
@@ -131,7 +133,7 @@ class Connection(threading.Thread):
     for i in xrange(len(args)):
       arg = args[i]
       if isinstance(arg, datetime.datetime):
-        s = (arg - utc_start).total_seconds()
+        s = (arg.astimezone(pytz.utc) - utc_start).total_seconds()
         args[i] = (int(s), int(s * 1000000) % 1000000 * 1000)
 
   def __prepare(self, sql):
@@ -239,7 +241,7 @@ class Future(object):
       else:
         break
     self.__conn._cond.release()
-    if msg != None:
+    if msg:
       msg = msg['1']
       if isinstance(msg, six.string_types):
         raise Error(msg)
@@ -249,8 +251,8 @@ class Future(object):
             for i in xrange(len(rec)):
               v = rec[i]
               if isinstance(v, list) and len(v) == 2:
-                rec[i] = datetime.datetime.fromtimestamp(
-                    v[0]) + datetime.timedelta(microseconds=v[1] / 1000)
+                rec[i] = fromtimestamp(v[0], pytz.utc) + \
+                  datetime.timedelta(microseconds=v[1] / 1000)
       return msg
     if err:
       raise err

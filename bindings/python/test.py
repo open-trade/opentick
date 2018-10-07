@@ -3,6 +3,7 @@
 import datetime
 import opentick
 from six.moves import xrange
+import pytz
 
 conn = None
 try:
@@ -41,6 +42,8 @@ try:
         ms = j * n2 + k
         tm2 = tm + datetime.timedelta(microseconds=ms)
         args_array.append([1, i, tm2, 2.2, 2.4, 2.1, 2.3, 1000000, 2.25])
+      # the batch size is limited by foundationdb transaction size
+      # https://apple.github.io/foundationdb/known-limitations.html
       res = conn.batch_insert_async(
           'insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
           args_array)
@@ -57,6 +60,14 @@ try:
               opentick.split_range(tm, tm2, 10))
     now4 = datetime.datetime.now()
     print(str(now4), str(now4- now3), len(res), 'retrieved with ranges')
+    assert(len(res) == (i + 1) * n1 * n2)
+    assert(res[0][2] == tm.astimezone(pytz.utc))
+    assert(res[-1][2] == tm2.astimezone(pytz.utc))
+    res = conn.execute('select tm from test where sec=1 and interval=? and tm=?', i, tm)
+    assert(res[0][0] == tm.astimezone(pytz.utc))
+    res = conn.execute('select tm from test where sec=1 and interval=? limit -2', i)
+    assert(len(res) == 2)
+    assert(res[0][0] == tm2.astimezone(pytz.utc))
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
@@ -67,9 +78,15 @@ try:
       res += f.get()
     now6 = datetime.datetime.now()
     print(str(now6), str(now6 - now4), len(res), 'retrieved with async')
+    assert(len(res) == (i + 1) * n1 * n2)
+    assert(res[0][2] == tm.astimezone(pytz.utc))
+    assert(res[-1][2] == tm2.astimezone(pytz.utc))
     res = conn.execute('select * from test where sec=1')
     now7 = datetime.datetime.now()
     print(str(now7), str(now7 - now4), len(res), 'retrieved with one sync')
+    assert(len(res) == (i + 1) * n1 * n2)
+    assert(res[0][2] == tm.astimezone(pytz.utc))
+    assert(res[-1][2] == tm2.astimezone(pytz.utc))
     print()
 except opentick.Error as e:
   print(e)
