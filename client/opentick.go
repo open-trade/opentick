@@ -58,7 +58,7 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 
 type RangeArray [][2]interface{}
 
-func SplitRange(start interface{}, end interface{}, numParts int) (parts [][2]interface{}) {
+func SplitRange(start interface{}, end interface{}, numParts int) (parts RangeArray) {
 	if reflect.TypeOf(start) != reflect.TypeOf(end) || numParts <= 1 {
 		return
 	}
@@ -222,15 +222,6 @@ func (self *connection) BatchInsertAsync(sql string, argsArray [][]interface{}) 
 	return
 }
 
-func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interface{}, err error) {
-	var fut Future
-	fut, err = self.ExecuteAsync(sql, args...)
-	if err != nil {
-		return
-	}
-	return fut.Get()
-}
-
 func (self *connection) prepare(sql string) (prepared int, err error) {
 	if tmp, ok := self.prepared.Load(sql); ok {
 		prepared = tmp.(int)
@@ -261,10 +252,57 @@ func convertTimestamp(args []interface{}) {
 	}
 }
 
+func (self *connection) executeRanges(sql string, args ...interface{}) (ret [][]interface{}, err error) {
+	n := len(args) - 1
+	ranges := args[n].(RangeArray)
+	var futs []Future
+	for _, r := range ranges {
+		args2 := append(args[:n], r[:]...)
+		fut, err2 := self.ExecuteAsync(sql, args2...)
+		if err2 != nil {
+			err = err2
+			return
+		}
+		futs = append(futs, fut)
+	}
+	for _, fut := range futs {
+		ret2, err2 := fut.Get()
+		if err2 != nil {
+			err = err2
+			return
+		}
+		if len(ret2) > 0 {
+			if len(ret) > 0 && reflect.DeepEqual(ret[len(ret)-1], ret2[0]) {
+				ret2 = ret2[1:]
+			}
+			ret = append(ret, ret2...)
+		}
+	}
+	return
+}
+
+func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interface{}, err error) {
+	if len(args) > 0 {
+		if _, ok := args[len(args)-1].(RangeArray); ok {
+			return self.executeRanges(sql, args...)
+		}
+	}
+	var fut Future
+	fut, err = self.ExecuteAsync(sql, args...)
+	if err != nil {
+		return
+	}
+	return fut.Get()
+}
+
 func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Future, err error) {
 	prepared := -1
 	var cmd map[string]interface{}
 	if len(args) > 0 {
+		if _, ok := args[len(args)-1].(RangeArray); ok {
+			err = errors.New("RangeArray not supported in ExecuteAsync, please use Execute instead")
+			return
+		}
 		convertTimestamp(args)
 		prepared, err = self.prepare(sql)
 		if err != nil {
