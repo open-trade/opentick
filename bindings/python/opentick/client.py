@@ -62,22 +62,8 @@ class Connection(threading.Thread):
     prepared = None
     if len(args) > 0:
       args = list(args)
-      for i in xrange(len(args)):
-        arg = args[i]
-        if isinstance(arg, datetime.datetime):
-          s = (arg - utc_start).total_seconds()
-          args[i] = (int(s), int(s * 1000000) % 1000000 * 1000)
-      self._mutex.acquire()
-      prepared = self.__prepared.get(sql)
-      self._mutex.release()
-      if prepared == None:
-        ticker = self.__get_ticker()
-        cmd = {'0': ticker, '1': 'prepare', '2': sql}
-        self.__send(cmd)
-        n = Future(ticker, self).get()
-        self._mutex.acquire()
-        self.__prepared[sql] = n
-        self._mutex.release()
+      self.__convert_timestamp(args)
+      prepared = self.__prepare(sql)
     ticker = self.__get_ticker()
     cmd = {'0': ticker, '1': 'run', '2': sql, '3': args}
     if prepared != None:
@@ -85,6 +71,44 @@ class Connection(threading.Thread):
     self.__send(cmd)
     f = Future(ticker, self)
     return f
+
+  def batch_insert(self, sql, argsArray):
+    fut = self.batch_insert_async(sql, argsArray)
+    fut.get()
+
+  def batch_insert_async(self, sql, argsArray):
+    if not argsArray:
+      raise Error('argsArray required')
+    for args in argsArray:
+      self.__convert_timestamp(args)
+    prepared = self.__prepare(sql)
+    ticker = self.__get_ticker()
+    cmd = {'0': ticker, '1': 'batch', '2': prepared, '3': argsArray}
+    self.__send(cmd)
+    f = Future(ticker, self)
+    return f
+
+  def __convert_timestamp(self, args):
+    for i in xrange(len(args)):
+      arg = args[i]
+      if isinstance(arg, datetime.datetime):
+        s = (arg - utc_start).total_seconds()
+        args[i] = (int(s), int(s * 1000000) % 1000000 * 1000)
+
+  def __prepare(self, sql):
+    self._mutex.acquire()
+    prepared = self.__prepared.get(sql)
+    self._mutex.release()
+    if prepared == None:
+      ticker = self.__get_ticker()
+      cmd = {'0': ticker, '1': 'prepare', '2': sql}
+      self.__send(cmd)
+      n = Future(ticker, self).get()
+      self._mutex.acquire()
+      self.__prepared[sql] = n
+      prepared = n
+      self._mutex.release()
+    return prepared
 
   def __notify(self, ticker, msg):
     self._cond.acquire()
