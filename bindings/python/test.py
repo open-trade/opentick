@@ -5,7 +5,9 @@ import opentick
 from six.moves import xrange
 import pytz
 
+localize = pytz.utc.localize
 conn = None
+
 try:
   conn = opentick.connect('', 1116)
   res = conn.execute('create database if not exists test')
@@ -61,13 +63,13 @@ try:
     now4 = datetime.datetime.now()
     print(str(now4), str(now4- now3), len(res), 'retrieved with ranges')
     assert(len(res) == (i + 1) * n1 * n2)
-    assert(res[0][2] == tm.astimezone(pytz.utc))
-    assert(res[-1][2] == tm2.astimezone(pytz.utc))
+    assert(res[0][2] == localize(tm))
+    assert(res[-1][2] == localize(tm2))
     res = conn.execute('select tm from test where sec=1 and interval=? and tm=?', i, tm)
-    assert(res[0][0] == tm.astimezone(pytz.utc))
+    assert(res[0][0] == localize(tm))
     res = conn.execute('select tm from test where sec=1 and interval=? limit -2', i)
     assert(len(res) == 2)
-    assert(res[0][0] == tm2.astimezone(pytz.utc))
+    assert(res[0][0] == localize(tm2))
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
@@ -79,14 +81,14 @@ try:
     now6 = datetime.datetime.now()
     print(str(now6), str(now6 - now4), len(res), 'retrieved with async')
     assert(len(res) == (i + 1) * n1 * n2)
-    assert(res[0][2] == tm.astimezone(pytz.utc))
-    assert(res[-1][2] == tm2.astimezone(pytz.utc))
+    assert(res[0][2] == localize(tm))
+    assert(res[-1][2] == localize(tm2))
     res = conn.execute('select * from test where sec=1')
     now7 = datetime.datetime.now()
     print(str(now7), str(now7 - now4), len(res), 'retrieved with one sync')
     assert(len(res) == (i + 1) * n1 * n2)
-    assert(res[0][2] == tm.astimezone(pytz.utc))
-    assert(res[-1][2] == tm2.astimezone(pytz.utc))
+    assert(res[0][2] == localize(tm))
+    assert(res[-1][2] == localize(tm2))
     print()
 except opentick.Error as e:
   print(e)

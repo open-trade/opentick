@@ -13,6 +13,7 @@ import pytz
 
 fromtimestamp = datetime.datetime.fromtimestamp
 utc_start = fromtimestamp(0, pytz.utc)
+localize = pytz.utc.localize
 
 
 class Error(RuntimeError):
@@ -133,7 +134,7 @@ class Connection(threading.Thread):
     for i in xrange(len(args)):
       arg = args[i]
       if isinstance(arg, datetime.datetime):
-        s = (arg.astimezone(pytz.utc) - utc_start).total_seconds()
+        s = (localize(arg) - utc_start).total_seconds()
         args[i] = (int(s), int(s * 1000000) % 1000000 * 1000)
 
   def __prepare(self, sql):
