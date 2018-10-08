@@ -122,7 +122,7 @@ func handleConnection(conn net.Conn) {
 			if err != nil {
 				if string(body) == "protocol=json" {
 					useJson = true
-					goto reply
+					return
 				}
 				res = "Invalid bson: " + err.Error()
 				goto reply
