@@ -2,12 +2,14 @@ package opentick
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"math/rand"
 	"net"
+	"sync"
 )
 
 var defaultDBs []fdb.Transactor
@@ -67,7 +69,9 @@ func handleConnection(conn net.Conn) {
 	}()
 	go writeToConnection(connection{ch, conn})
 	var prepared []interface{}
+	var mux sync.Mutex
 	var dbName string
+	var useJson bool
 	for {
 		var head [4]byte
 		tmp := head[:4]
@@ -110,8 +114,16 @@ func handleConnection(conn net.Conn) {
 			var args []interface{}
 			var exists bool
 			var stmt interface{}
-			err = bson.Unmarshal(body, &data)
+			if useJson {
+				err = json.Unmarshal(body, &data)
+			} else {
+				err = bson.Unmarshal(body, &data)
+			}
 			if err != nil {
+				if string(body) == "protocol=json" {
+					useJson = true
+					goto reply
+				}
 				res = "Invalid bson: " + err.Error()
 				goto reply
 			}
@@ -139,11 +151,14 @@ func handleConnection(conn net.Conn) {
 					res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
 					goto reply
 				}
+				mux.Lock()
 				if preparedId >= len(prepared) {
+					mux.Unlock()
 					res = fmt.Sprint("Invalid preparedId ", preparedId)
 					goto reply
 				}
 				stmt = prepared[preparedId]
+				mux.Unlock()
 			} else if sql == "" {
 				res = "Empty sql"
 				goto reply
@@ -196,8 +211,10 @@ func handleConnection(conn net.Conn) {
 					res = err.Error()
 					goto reply
 				}
+				mux.Lock()
 				prepared = append(prepared, res)
 				res = len(prepared) - 1
+				mux.Unlock()
 			} else if cmd == "use" {
 				dbName = sql
 				exists, err = HasDatabase(getDB(), dbName)
@@ -212,18 +229,24 @@ func handleConnection(conn net.Conn) {
 				res = "Invalid command " + cmd
 			}
 		reply:
-			reply(ticker, res, ch)
+			reply(ticker, res, ch, useJson)
 		}()
 	}
 }
 
-func reply(ticker int, res interface{}, ch chan []byte) {
+func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
 	defer func() {
 		if err := recover(); err != nil {
 			// log.Println(err)
 		}
 	}()
-	data, err := bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
+	var data []byte
+	var err error
+	if useJson {
+		data, err = json.Marshal(map[string]interface{}{"0": ticker, "1": res})
+	} else {
+		data, err = bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
+	}
 	if err != nil {
 		panic(err)
 	}
