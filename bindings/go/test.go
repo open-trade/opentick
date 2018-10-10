@@ -8,7 +8,8 @@ import (
 )
 
 func main() {
-	conn, err0 := client.Connect("", 1116, "")
+	conn, err0 := client.Connect("127.0.0.1", 1116, "")
+	log.Println("connected")
 	assertEqual(nil, err0)
 	res, err := conn.Execute("create database if not exists test")
 	assertEqual(nil, err)
@@ -17,6 +18,7 @@ func main() {
 	assertEqual(nil, err)
 	res, err = conn.Execute("delete from test where sec=?", 1)
 	assertEqual(nil, err)
+	log.Println("records deleted")
 	tm := time.Now()
 	for i := 0; i < 100; i++ {
 		n1 := 10

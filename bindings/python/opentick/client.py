@@ -220,11 +220,9 @@ class Future(object):
     self.__conn = conn
 
   def __get_store(self, ticker):
-    self.__conn._mutex.acquire()
     out = self.__conn._store.get(ticker)
     if out != None and ticker != -1:
       del self.__conn._store[self.__ticker]
-    self.__conn._mutex.release()
     return out
 
   def get(self, timeout=None): # timeout in seconds

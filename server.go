@@ -9,7 +9,9 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
+	"sync/atomic"
 )
 
 var defaultDBs []fdb.Transactor
@@ -21,6 +23,7 @@ func getDB() fdb.Transactor {
 }
 
 func StartServer(addr string, fdbClusterFile string, numDatabaseConn int) error {
+	log.SetOutput(os.Stdout)
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
 		sNumDatabaseConn = numDatabaseConn
@@ -72,6 +75,7 @@ func handleConnection(conn net.Conn) {
 	var mux sync.Mutex
 	var dbName string
 	var useJson bool
+	var unfinished int32
 	for {
 		var head [4]byte
 		tmp := head[:4]
@@ -102,6 +106,8 @@ func handleConnection(conn net.Conn) {
 			n -= n2
 		}
 		go func() {
+			defer atomic.AddInt32(&unfinished, -1)
+			atomic.AddInt32(&unfinished, 1)
 			var data map[string]interface{}
 			var err error
 			var ok bool

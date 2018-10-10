@@ -8,14 +8,18 @@ import pytz
 localize = pytz.utc.localize
 conn = None
 
+def log(*args): print(datetime.datetime.now(), *args)
+
 try:
-  conn = opentick.connect('', 1116)
+  conn = opentick.connect('127.0.0.1', 1116)
+  log('connected')
   res = conn.execute('create database if not exists test')
   conn.use('test')
   res = conn.execute(
       'create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double, vwap double, primary key(sec, interval, tm))'
   )
   res = conn.execute('delete from test where sec=?', 1)
+  log('records deleted')
   tm = datetime.datetime.now()
   for i in xrange(100):
     n1 = 10
