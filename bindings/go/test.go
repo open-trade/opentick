@@ -68,9 +68,15 @@ func main() {
 		}
 		now3 = time.Now()
 		log.Println(now3.Sub(now2), i, len(futs), "all batch insert futures get done")
-		res = nil
+		futs = nil
 		for j := 0; j <= i; j++ {
-			tmp, err := conn.Execute("select * from test where sec=1 and interval=? and tm>=? and tm<=?", j, client.SplitRange(tm, tm2, 10))
+			fut, err := conn.ExecuteAsync("select * from test where sec=1 and interval=? and tm>=? and tm<=?", j, client.SplitRange(tm, tm2, 10))
+			assertEqual(nil, err)
+			futs = append(futs, fut)
+		}
+		res = nil
+		for _, f := range futs {
+			tmp, err := f.Get()
 			assertEqual(nil, err)
 			res = append(res, tmp...)
 		}
@@ -92,23 +98,21 @@ func main() {
 			assertEqual(nil, err)
 			futs = append(futs, fut)
 		}
-		now5 := time.Now()
-		log.Println(now5.Sub(now4), "async done")
 		res = nil
 		for _, f := range futs {
 			tmp, err := f.Get()
 			assertEqual(nil, err)
 			res = append(res, tmp...)
 		}
-		now6 := time.Now()
-		log.Println(now6.Sub(now4), len(res), "retrieved with async")
+		now5 := time.Now()
+		log.Println(now5.Sub(now4), len(res), "retrieved with async")
 		assertEqual((i+1)*n1*n2, len(res))
 		assertEqual(tm.UTC(), res[0][2])
 		assertEqual(tm2.UTC(), res[len(res)-1][2])
 		res, err = conn.Execute("select * from test where sec=1")
 		assertEqual(nil, err)
-		now7 := time.Now()
-		log.Println(now7.Sub(now4), len(res), "retrieved with one sync")
+		now6 := time.Now()
+		log.Println(now6.Sub(now5), len(res), "retrieved with one sync")
 		assertEqual((i+1)*n1*n2, len(res))
 		assertEqual(tm.UTC(), res[0][2])
 		assertEqual(tm2.UTC(), res[len(res)-1][2])

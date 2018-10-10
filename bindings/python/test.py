@@ -60,10 +60,13 @@ try:
       f.get()
     now3 = datetime.datetime.now()
     print(str(now3), str(now3 - now2), i, len(futs), 'all batch insert futures get done')
-    res = []
+    futs = []
     for j in range(i+1):
-      res += conn.execute('select * from test where sec=1 and interval=? and tm>=? and tm<=?', j,
-              opentick.split_range(tm, tm2, 10))
+      futs.append(conn.execute_async('select * from test where sec=1 and interval=? and tm>=? and tm<=?',
+          j, opentick.split_range(tm, tm2, 10)))
+    res = []
+    for f in futs:
+      res += f.get()
     now4 = datetime.datetime.now()
     print(str(now4), str(now4- now3), len(res), 'retrieved with ranges')
     assert(len(res) == (i + 1) * n1 * n2)
@@ -77,19 +80,17 @@ try:
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
-    now5 = datetime.datetime.now()
-    print(str(now5), str(now5- now4), 'async done')
     res = []
     for f in futs:
       res += f.get()
-    now6 = datetime.datetime.now()
-    print(str(now6), str(now6 - now4), len(res), 'retrieved with async')
+    now5 = datetime.datetime.now()
+    print(str(now5), str(now5 - now4), len(res), 'retrieved with async')
     assert(len(res) == (i + 1) * n1 * n2)
     assert(res[0][2] == localize(tm))
     assert(res[-1][2] == localize(tm2))
     res = conn.execute('select * from test where sec=1')
-    now7 = datetime.datetime.now()
-    print(str(now7), str(now7 - now4), len(res), 'retrieved with one sync')
+    now6 = datetime.datetime.now()
+    print(str(now6), str(now6 - now5), len(res), 'retrieved with one sync')
     assert(len(res) == (i + 1) * n1 * n2)
     assert(res[0][2] == localize(tm))
     assert(res[-1][2] == localize(tm2))
