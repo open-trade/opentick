@@ -237,7 +237,7 @@ class Future(object):
     self.__conn._mutex.release()
     return out
 
-  def get(self, timeout=None):
+  def get(self, timeout=None): # timeout in seconds
     msg = None
     err = None
     self.__conn._cond.acquire()

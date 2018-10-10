@@ -13,7 +13,7 @@ import (
 )
 
 type Future interface {
-	Get() ([][]interface{}, error)
+	Get(timeout ...int) ([][]interface{}, error) // timeout in seconds
 }
 
 type Connection interface {
@@ -121,9 +121,14 @@ type future struct {
 	conn   *connection
 }
 
-func (self *future) get() (interface{}, error) {
+func (self *future) get(timeout ...int) (interface{}, error) {
 	self.conn.mutexCond.Lock()
 	defer self.conn.mutexCond.Unlock()
+	var timeout2 time.Duration
+	if len(timeout) > 0 {
+		timeout2 = time.Duration(time.Duration(timeout[0]) * time.Second)
+	}
+	tm := time.Now()
 	for {
 		if tmp, ok := self.conn.store[self.ticker]; ok {
 			delete(self.conn.store, self.ticker)
@@ -133,16 +138,19 @@ func (self *future) get() (interface{}, error) {
 				return nil, errors.New(str)
 			}
 			return res, nil
-		} else if tmp, ok := self.conn.store[-1]; ok {
+		} else if tmp, ok := self.conn.store[-1]; ok && tmp != nil {
 			return nil, tmp.(error)
 		}
 		self.conn.cond.Wait()
+		if timeout2 > 0 && time.Now().Sub(tm) >= timeout2 {
+			return nil, errors.New("Timeout")
+		}
 	}
 }
 
-func (self *future) Get() (ret [][]interface{}, err error) {
+func (self *future) Get(timeout ...int) (ret [][]interface{}, err error) {
 	var res interface{}
-	res, err = self.get()
+	res, err = self.get(timeout...)
 	if res == nil || err != nil {
 		return
 	}
@@ -366,13 +374,19 @@ func (self *connection) notify(ticker int, msg interface{}) {
 
 func recv(c *connection) {
 	defer c.cond.Broadcast()
+	timeout := 100 * time.Millisecond
 	for {
 		var head [4]byte
 		tmp := head[:4]
 		n := len(tmp)
 		for n > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(timeout))
 			n2, err := c.conn.Read(tmp)
 			if err != nil {
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					c.cond.Broadcast()
+					continue
+				}
 				c.notify(-1, err)
 				return
 			}
@@ -387,8 +401,13 @@ func recv(c *connection) {
 		tmp = body
 		n = len(tmp)
 		for n > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(timeout))
 			n2, err := c.conn.Read(tmp)
 			if err != nil {
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					c.cond.Broadcast()
+					continue
+				}
 				c.notify(-1, err)
 				return
 			}
