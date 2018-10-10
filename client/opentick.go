@@ -121,6 +121,10 @@ type future struct {
 	conn   *connection
 }
 
+type futures struct {
+	futs []Future
+}
+
 func (self *future) get(timeout ...int) (interface{}, error) {
 	self.conn.mutexCond.Lock()
 	defer self.conn.mutexCond.Unlock()
@@ -269,7 +273,7 @@ func convertTimestamp(args []interface{}) {
 	}
 }
 
-func (self *connection) executeRanges(sql string, args ...interface{}) (ret [][]interface{}, err error) {
+func (self *connection) executeRangesAsync(sql string, args ...interface{}) (ret Future, err error) {
 	n := len(args) - 1
 	ranges := args[n].(RangeArray)
 	var futs []Future
@@ -282,8 +286,12 @@ func (self *connection) executeRanges(sql string, args ...interface{}) (ret [][]
 		}
 		futs = append(futs, fut)
 	}
-	for _, fut := range futs {
-		ret2, err2 := fut.Get()
+	return &futures{futs}, nil
+}
+
+func (self *futures) Get(timeout ...int) (ret [][]interface{}, err error) {
+	for _, fut := range self.futs {
+		ret2, err2 := fut.Get(timeout...)
 		if err2 != nil {
 			err = err2
 			return
@@ -299,12 +307,16 @@ func (self *connection) executeRanges(sql string, args ...interface{}) (ret [][]
 }
 
 func (self *connection) Execute(sql string, args ...interface{}) (ret [][]interface{}, err error) {
+	var fut Future
 	if len(args) > 0 {
 		if _, ok := args[len(args)-1].(RangeArray); ok {
-			return self.executeRanges(sql, args...)
+			fut, err = self.executeRangesAsync(sql, args...)
+			if err != nil {
+				return
+			}
+			return fut.Get()
 		}
 	}
-	var fut Future
 	fut, err = self.ExecuteAsync(sql, args...)
 	if err != nil {
 		return
@@ -317,8 +329,7 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 	var cmd map[string]interface{}
 	if len(args) > 0 {
 		if _, ok := args[len(args)-1].(RangeArray); ok {
-			err = errors.New("RangeArray not supported in ExecuteAsync, please use Execute instead")
-			return
+			return self.executeRangesAsync(sql, args...)
 		}
 		convertTimestamp(args)
 		prepared, err = self.prepare(sql)

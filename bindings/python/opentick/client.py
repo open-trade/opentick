@@ -81,16 +81,15 @@ class Connection(threading.Thread):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges(sql, *args)
-    fut = self.execute_async(sql, *args)
-    return fut.get()
+          return self.__execute_ranges_async(sql, *args).get()
+    return self.execute_async(sql, *args).get()
 
   def execute_async(self, sql, *args):
     prepared = None
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-         raise Error("RangeArray not supported in execute_async, please use execute instead")
+          return self.__execute_ranges_async(sql, *args)
       args = list(args)
       self.__convert_timestamp(args)
       prepared = self.__prepare(sql)
@@ -99,8 +98,7 @@ class Connection(threading.Thread):
     if prepared != None:
       cmd['2'] = prepared
     self.__send(cmd)
-    f = Future(ticker, self)
-    return f
+    return Future(ticker, self)
 
   def batch_insert(self, sql, argsArray):
     fut = self.batch_insert_async(sql, argsArray)
@@ -115,23 +113,15 @@ class Connection(threading.Thread):
     ticker = self.__get_ticker()
     cmd = {'0': ticker, '1': 'batch', '2': prepared, '3': argsArray}
     self.__send(cmd)
-    f = Future(ticker, self)
-    return f
+    return Future(ticker, self)
 
-  def __execute_ranges(self, sql, *args):
+  def __execute_ranges_async(self, sql, *args):
     ranges = args[-1]
     futs = []
     for r in ranges:
       args2 = list(args[:-1]) + r
       futs.append(self.execute_async(sql, *args2))
-    out = []
-    for fut in futs:
-      ret = fut.get()
-      if ret and len(ret) > 0:
-        if len(out) > 0 and out[-1] == ret[0]:
-          ret = ret[1:]
-        out += ret
-    return out
+    return Futures(futs)
 
   def __convert_timestamp(self, args):
     for i in xrange(len(args)):
@@ -268,3 +258,17 @@ class Future(object):
       return msg
     if err:
       raise err
+
+class Futures(object):
+  def __init__(self, futs):
+    self.__futs = futs
+
+  def get(self, timeout=None):
+    out = []
+    for fut in self.__futs:
+      ret = fut.get(timeout)
+      if ret and len(ret) > 0:
+        if len(out) > 0 and out[-1] == ret[0]:
+          ret = ret[1:]
+        out += ret
+    return out
