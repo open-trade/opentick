@@ -36,6 +36,7 @@ try:
       f.get()
     now3 = datetime.datetime.now()
     print(str(now3), str(now3 - now2), i, len(futs), 'all insert futures get done')
+    # futs[0].get()
     futs = []
     now = datetime.datetime.now()
     for j in xrange(n1):

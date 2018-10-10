@@ -171,6 +171,7 @@ class Connection(threading.Thread):
           self.__notify(-1, e)
           return
         if not got:
+          self.__notify(-1, Error('Connection reset by peer'))
           return
         n -= len(got)
         head += got
@@ -186,6 +187,7 @@ class Connection(threading.Thread):
           self.__notify(-1, e)
           return
         if not got:
+          self.__notify(-1, Error('Connection reset by peer'))
           return
         n -= len(got)
         body += got
