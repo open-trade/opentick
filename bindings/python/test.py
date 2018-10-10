@@ -36,7 +36,10 @@ try:
       f.get()
     now3 = datetime.datetime.now()
     print(str(now3), str(now3 - now2), i, len(futs), 'all insert futures get done')
-    # futs[0].get()
+    try:
+      futs[0].get(1)
+    except Exception as e:
+      assert(str(e) == 'Timeout')
     futs = []
     now = datetime.datetime.now()
     for j in xrange(n1):

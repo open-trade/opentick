@@ -22,6 +22,9 @@ class Error(RuntimeError):
 
 def connect(addr, port, db_name=''):
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  microsecs = 100000
+  timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
+  sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
   sock.connect((addr, port))
   conn = Connection(sock, db_name)
   return conn
@@ -167,6 +170,7 @@ class Connection(threading.Thread):
           got = self.__sock.recv(n)
         except socket.error as e:
           if e.errno == 11:  # timeout
+            self.__notify(-1, None)
             continue
           self.__notify(-1, e)
           return
@@ -183,6 +187,7 @@ class Connection(threading.Thread):
           got = self.__sock.recv(n)
         except socket.error as e:
           if e.errno == 11:  # timeout
+            self.__notify(-1, None)
             continue
           self.__notify(-1, e)
           return
@@ -232,10 +237,11 @@ class Future(object):
     self.__conn._mutex.release()
     return out
 
-  def get(self):
+  def get(self, timeout=None):
     msg = None
     err = None
     self.__conn._cond.acquire()
+    tm = datetime.datetime.now()
     while True:
       msg = self.__get_store(self.__ticker)
       err = self.__get_store(-1)
@@ -243,6 +249,9 @@ class Future(object):
         self.__conn._cond.wait()
       else:
         break
+      if (timeout or 0) > 0 and datetime.datetime.now() - tm >= datetime.timedelta(seconds=timeout):
+        self.__conn._cond.release()
+        raise Error('Timeout')
     self.__conn._cond.release()
     if msg:
       msg = msg['1']
