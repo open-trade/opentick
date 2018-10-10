@@ -41,7 +41,7 @@ func main() {
 			f.Get()
 		}
 		now3 := time.Now()
-		log.Println(now3.Sub(now2), i, len(futs), "all insert futures get done")
+		log.Println(now3.Sub(now2), now3.Sub(now), i, len(futs), "all insert futures get done")
 		res, err = futs[0].Get(1)
 		assertEqual("Timeout", err.Error())
 		futs = nil
@@ -67,7 +67,7 @@ func main() {
 			f.Get()
 		}
 		now3 = time.Now()
-		log.Println(now3.Sub(now2), i, len(futs), "all batch insert futures get done")
+		log.Println(now3.Sub(now2), now3.Sub(now), i, len(futs), "all batch insert futures get done")
 		futs = nil
 		for j := 0; j <= i; j++ {
 			fut, err := conn.ExecuteAsync("select * from test where sec=1 and interval=? and tm>=? and tm<=?", j, client.SplitRange(tm, tm2, 10))

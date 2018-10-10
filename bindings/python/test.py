@@ -35,7 +35,7 @@ try:
     for f in futs:
       f.get()
     now3 = datetime.datetime.now()
-    print(str(now3), str(now3 - now2), i, len(futs), 'all insert futures get done')
+    print(str(now3), str(now3 - now2), str(now3 - now), i, len(futs), 'all insert futures get done')
     try:
       futs[0].get(1)
     except Exception as e:
@@ -59,7 +59,7 @@ try:
     for f in futs:
       f.get()
     now3 = datetime.datetime.now()
-    print(str(now3), str(now3 - now2), i, len(futs), 'all batch insert futures get done')
+    print(str(now3), str(now3 - now2), str(now3 - now), i, len(futs), 'all batch insert futures get done')
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=? and tm>=? and tm<=?',
