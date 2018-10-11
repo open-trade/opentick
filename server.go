@@ -11,23 +11,28 @@ import (
 	"net"
 	"os"
 	"sync"
-	"sync/atomic"
 )
 
 var defaultDBs []fdb.Transactor
 
 var sNumDatabaseConn = 1
+var sMaxConcurrency = 100
 
 func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, fdbClusterFile string, numDatabaseConn int) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency int) error {
 	log.SetOutput(os.Stdout)
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
 		sNumDatabaseConn = numDatabaseConn
 	}
+	log.Println("Number of fdb connections:", sNumDatabaseConn)
+	if maxConcurrency > 0 {
+		sMaxConcurrency = maxConcurrency
+	}
+	log.Println("Max concurrency of one connection:", sMaxConcurrency)
 	defaultDBs = make([]fdb.Transactor, sNumDatabaseConn)
 	for i := 0; i < sNumDatabaseConn; i++ {
 		if fdbClusterFile == "" {
@@ -54,8 +59,12 @@ func StartServer(addr string, fdbClusterFile string, numDatabaseConn int) error 
 }
 
 type connection struct {
-	ch   chan []byte
-	conn net.Conn
+	ch     chan []byte
+	conn   net.Conn
+	store  [][]byte
+	mutex  sync.Mutex
+	cond   *sync.Cond
+	closed bool
 }
 
 func (self *connection) Send(msg []byte) {
@@ -64,18 +73,11 @@ func (self *connection) Send(msg []byte) {
 
 func handleConnection(conn net.Conn) {
 	log.Println("New connection from", conn.RemoteAddr())
-	ch := make(chan []byte)
-	defer func() {
-		close(ch)
-		conn.Close()
-		log.Println("Closed connection from", conn.RemoteAddr())
-	}()
-	go writeToConnection(connection{ch, conn})
-	var prepared []interface{}
-	var mux sync.Mutex
-	var dbName string
-	var useJson bool
-	var unfinished int32
+	client := connection{ch: make(chan []byte), conn: conn}
+	client.cond = sync.NewCond(&client.mutex)
+	defer client.close()
+	go client.writeToConnection()
+	go client.process()
 	for {
 		var head [4]byte
 		tmp := head[:4]
@@ -105,9 +107,84 @@ func handleConnection(conn net.Conn) {
 			tmp = tmp[n2:]
 			n -= n2
 		}
+		client.push(body)
+	}
+}
+
+func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
+	defer func() {
+		if err := recover(); err != nil {
+			// log.Println(err)
+		}
+	}()
+	var data []byte
+	var err error
+	if useJson {
+		data, err = json.Marshal(map[string]interface{}{"0": ticker, "1": res})
+	} else {
+		data, err = bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
+	}
+	if err != nil {
+		panic(err)
+	}
+	var size [4]byte
+	binary.LittleEndian.PutUint32(size[:], uint32(len(data)))
+	ch <- append(size[:], data...)
+}
+
+func (c *connection) writeToConnection() {
+	defer func() {
+		log.Println("Writing thread ended,", c.conn.RemoteAddr())
+	}()
+	for {
+		select {
+		case msg, ok := <-c.ch:
+			if !ok {
+				return
+			}
+			n := len(msg)
+			for n > 0 {
+				n2, err := c.conn.Write(msg)
+				if err != nil {
+					return
+				}
+				msg = msg[n2:]
+				n -= n2
+			}
+		}
+	}
+}
+
+func (self *connection) process() {
+	var prepared []interface{}
+	var mut sync.Mutex
+	var dbName string
+	var useJson bool
+	var unfinished int32
+	for {
+		var body []byte
+		self.mutex.Lock()
+		for {
+			if self.closed {
+				log.Println("Process thread ended from", self.conn.RemoteAddr())
+				return
+			} else if len(self.store) == 0 || unfinished > int32(sMaxConcurrency) {
+				self.cond.Wait()
+			} else {
+				body = self.store[0]
+				self.store = self.store[1:]
+				break
+			}
+		}
+		unfinished++
+		self.mutex.Unlock()
 		go func() {
-			defer atomic.AddInt32(&unfinished, -1)
-			atomic.AddInt32(&unfinished, 1)
+			defer func() {
+				self.mutex.Lock()
+				unfinished--
+				self.cond.Signal()
+				self.mutex.Unlock()
+			}()
 			var data map[string]interface{}
 			var err error
 			var ok bool
@@ -157,14 +234,14 @@ func handleConnection(conn net.Conn) {
 					res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
 					goto reply
 				}
-				mux.Lock()
+				mut.Lock()
 				if preparedId >= len(prepared) {
-					mux.Unlock()
+					mut.Unlock()
 					res = fmt.Sprint("Invalid preparedId ", preparedId)
 					goto reply
 				}
 				stmt = prepared[preparedId]
-				mux.Unlock()
+				mut.Unlock()
 			} else if sql == "" {
 				res = "Empty sql"
 				goto reply
@@ -217,10 +294,10 @@ func handleConnection(conn net.Conn) {
 					res = err.Error()
 					goto reply
 				}
-				mux.Lock()
+				mut.Lock()
 				prepared = append(prepared, res)
 				res = len(prepared) - 1
-				mux.Unlock()
+				mut.Unlock()
 			} else if cmd == "use" {
 				dbName = sql
 				exists, err = HasDatabase(getDB(), dbName)
@@ -235,51 +312,24 @@ func handleConnection(conn net.Conn) {
 				res = "Invalid command " + cmd
 			}
 		reply:
-			reply(ticker, res, ch, useJson)
+			reply(ticker, res, self.ch, useJson)
 		}()
 	}
 }
 
-func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
-	defer func() {
-		if err := recover(); err != nil {
-			// log.Println(err)
-		}
-	}()
-	var data []byte
-	var err error
-	if useJson {
-		data, err = json.Marshal(map[string]interface{}{"0": ticker, "1": res})
-	} else {
-		data, err = bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
-	}
-	if err != nil {
-		panic(err)
-	}
-	var size [4]byte
-	binary.LittleEndian.PutUint32(size[:], uint32(len(data)))
-	ch <- append(size[:], data...)
+func (self *connection) close() {
+	close(self.ch)
+	self.conn.Close()
+	self.mutex.Lock()
+	self.closed = true
+	self.cond.Signal()
+	self.mutex.Unlock()
+	log.Println("Closed connection from", self.conn.RemoteAddr())
 }
 
-func writeToConnection(c connection) {
-	defer func() {
-		log.Println("Writing thread ended,", c.conn.RemoteAddr())
-	}()
-	for {
-		select {
-		case msg, ok := <-c.ch:
-			if !ok {
-				return
-			}
-			n := len(msg)
-			for n > 0 {
-				n2, err := c.conn.Write(msg)
-				if err != nil {
-					return
-				}
-				msg = msg[n2:]
-				n -= n2
-			}
-		}
-	}
+func (self *connection) push(data []byte) {
+	self.mutex.Lock()
+	self.store = append(self.store, data)
+	self.cond.Signal()
+	self.mutex.Unlock()
 }
