@@ -3,12 +3,14 @@
 import datetime
 import opentick
 from six.moves import xrange
+import six
 import pytz
+import time
 
 localize = pytz.utc.localize
 conn = None
 
-def log(*args): print(datetime.datetime.now(), *args)
+def log(*args): six.print_(datetime.datetime.now(), *args)
 
 try:
   conn = opentick.connect('127.0.0.1', 1116)
@@ -35,11 +37,10 @@ try:
           'insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
           1, i, tm2, 2.2, 2.4, 2.1, 2.3, 1000000, 2.25))
     now2 = datetime.datetime.now()
-    print(str(now2), str(now2 - now), 'async done')
-    for f in futs:
-      f.get()
+    log(str(now2 - now), 'async done')
+    for f in futs: f.get()
     now3 = datetime.datetime.now()
-    print(str(now3), str(now3 - now2), str(now3 - now), i, len(futs), 'all insert futures get done')
+    log(str(now3 - now2), str(now3 - now), i, len(futs), 'all insert futures get done')
     try:
       futs[0].get(1)
     except Exception as e:
@@ -59,20 +60,18 @@ try:
           args_array)
       futs.append(res)
     now2 = datetime.datetime.now()
-    print(str(now2), str(now2 - now), 'async done')
-    for f in futs:
-      f.get()
+    log(str(now2 - now), 'async done')
+    for f in futs: f.get()
     now3 = datetime.datetime.now()
-    print(str(now3), str(now3 - now2), str(now3 - now), i, len(futs), 'all batch insert futures get done')
+    log(str(now3 - now2), str(now3 - now), i, len(futs), 'all batch insert futures get done')
     futs = []
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=? and tm>=? and tm<=?',
           j, opentick.split_range(tm, tm2, 10)))
     res = []
-    for f in futs:
-      res += f.get()
+    for f in futs: res += f.get()
     now4 = datetime.datetime.now()
-    print(str(now4), str(now4- now3), len(res), 'retrieved with ranges')
+    log(str(now4- now3), len(res), 'retrieved with ranges')
     assert(len(res) == (i + 1) * n1 * n2)
     assert(res[0][2] == localize(tm))
     assert(res[-1][2] == localize(tm2))
@@ -85,21 +84,20 @@ try:
     for j in range(i+1):
       futs.append(conn.execute_async('select * from test where sec=1 and interval=?', j))
     res = []
-    for f in futs:
-      res += f.get()
+    for f in futs: res += f.get()
     now5 = datetime.datetime.now()
-    print(str(now5), str(now5 - now4), len(res), 'retrieved with async')
+    log(str(now5 - now4), len(res), 'retrieved with async')
     assert(len(res) == (i + 1) * n1 * n2)
     assert(res[0][2] == localize(tm))
     assert(res[-1][2] == localize(tm2))
     res = conn.execute('select * from test where sec=1')
     now6 = datetime.datetime.now()
-    print(str(now6), str(now6 - now5), len(res), 'retrieved with one sync')
+    log(str(now6 - now5), len(res), 'retrieved with one sync')
     assert(len(res) == (i + 1) * n1 * n2)
     assert(res[0][2] == localize(tm))
     assert(res[-1][2] == localize(tm2))
-    print()
+    log()
 except opentick.Error as e:
-  print(e)
+  log(e)
 finally:
   if conn: conn.close()
