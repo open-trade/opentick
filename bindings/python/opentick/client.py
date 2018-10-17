@@ -14,6 +14,7 @@ import pytz
 fromtimestamp = datetime.datetime.fromtimestamp
 utc_start = fromtimestamp(0, pytz.utc)
 localize = pytz.utc.localize
+BUF_SIZE = 1024 * 1024
 
 
 class Error(RuntimeError):
@@ -22,9 +23,7 @@ class Error(RuntimeError):
 
 def connect(addr, port, db_name=''):
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  microsecs = 100000
-  timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
-  sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
+  sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
   sock.connect((addr, port))
   conn = Connection(sock, db_name)
   return conn
@@ -151,9 +150,48 @@ class Connection(threading.Thread):
     self._cond.notify_all()
     self._cond.release()
 
+  '''
+  def __recv(self):
+    msg = self.__parse_msg()
+    if msg != None: return msg
+    while True:
+      try:
+        got = self.__sock.recv(BUF_SIZE)
+        if not got:
+          self.__notify(-1, Error('Connection reset by peer'))
+          return None
+        self.__buf += got
+        msg = self.__parse_msg()
+        if msg != None: return msg
+      except socket.error as e:
+        if e.errno != 11: # not timeout
+          self.__notify(-1, None)
+          continue
+        self.__notify(-1, e)
+        return None
+
+  def __parse_msg(self):
+    if len(self.__buf) >= 8:
+      n = self.__buf[:8]
+      n = struct.unpack('<Q', n)[0]
+      if len(self.__buf) >= 8 + n:
+        msg = self.__buf[8:8+n]
+        self.__buf = self.__buf[8+n:]
+        msg = BSON(msg).decode()
+        return msg
+    return None
+
+  def run(self):
+    self.__buf = six.b('')
+    while True:
+      msg = self.__recv()
+      if msg == None: break
+      self.__notify(msg['0'], msg)
+  '''
+
   def run(self):
     while True:
-      n = 4
+      n = 8
       head = six.b('')
       while n > 0:
         try:
@@ -169,8 +207,8 @@ class Connection(threading.Thread):
           return
         n -= len(got)
         head += got
-      assert (len(head) == 4)
-      n = struct.unpack('<I', head)[0]
+      assert (len(head) == 8)
+      n = struct.unpack('<Q', head)[0]
       body = six.b('')
       while n > 0:
         try:
@@ -192,7 +230,7 @@ class Connection(threading.Thread):
   def __send(self, msg):
     out = BSON.encode(msg)
     n = len(out)
-    out = struct.pack('<I', n) + out
+    out = struct.pack('<Q', n) + out
     n = len(out)
     self._mutex.acquire()
     while n > 0:
@@ -234,7 +272,7 @@ class Future(object):
       msg = self.__get_store(self.__ticker)
       err = self.__get_store(-1)
       if msg == None and err == None:
-        self.__conn._cond.wait()
+        self.__conn._cond.wait(0.1)
       else:
         break
       if (timeout or 0) > 0 and datetime.datetime.now() - tm >= datetime.timedelta(seconds=timeout):

@@ -79,8 +79,8 @@ func handleConnection(conn net.Conn) {
 	go client.writeToConnection()
 	go client.process()
 	for {
-		var head [4]byte
-		tmp := head[:4]
+		var head [8]byte
+		tmp := head[:8]
 		n := len(tmp)
 		for n > 0 {
 			n2, err := conn.Read(tmp)
@@ -91,7 +91,7 @@ func handleConnection(conn net.Conn) {
 			tmp = tmp[n2:]
 			n -= n2
 		}
-		bodyLen := binary.LittleEndian.Uint32(head[:])
+		bodyLen := binary.LittleEndian.Uint64(head[:])
 		if bodyLen == 0 {
 			continue
 		}
@@ -127,14 +127,14 @@ func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
 	if err != nil {
 		panic(err)
 	}
-	var size [4]byte
-	binary.LittleEndian.PutUint32(size[:], uint32(len(data)))
+	var size [8]byte
+	binary.LittleEndian.PutUint64(size[:], uint64(len(data)))
 	ch <- append(size[:], data...)
 }
 
 func (c *connection) writeToConnection() {
 	defer func() {
-		log.Println("Writing thread ended,", c.conn.RemoteAddr())
+		log.Println("Writing thread ended from", c.conn.RemoteAddr())
 	}()
 	for {
 		select {
