@@ -26,10 +26,17 @@ type Connection interface {
 }
 
 func Connect(host string, port int, dbName string) (ret Connection, err error) {
-	conn, err := net.Dial("tcp", host+":"+strconv.FormatInt(int64(port), 10))
-	if err != nil {
+	raddr, err1 := net.ResolveTCPAddr("tcp", host+":"+strconv.FormatInt(int64(port), 10))
+	if err1 != nil {
+		err = err1
 		return
 	}
+	conn, err2 := net.DialTCP("tcp", nil, raddr)
+	if err2 != nil {
+		err = err2
+		return
+	}
+	conn.SetNoDelay(true)
 	m := &sync.Mutex{}
 	c := &connection{
 		conn:      conn,

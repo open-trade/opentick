@@ -111,13 +111,15 @@ func main() {
 		assertEqual((i+1)*n1*n2, len(res))
 		assertEqual(tm.UTC(), res[0][2])
 		assertEqual(tm2.UTC(), res[len(res)-1][2])
-		res, err = conn.Execute("select * from test where sec=1")
-		assertEqual(nil, err)
-		now6 := time.Now()
-		log.Println(now6.Sub(now5), len(res), "retrieved with one sync")
-		assertEqual((i+1)*n1*n2, len(res))
-		assertEqual(tm.UTC(), res[0][2])
-		assertEqual(tm2.UTC(), res[len(res)-1][2])
+		if i < 20 {
+			res, err = conn.Execute("select * from test where sec=1")
+			assertEqual(nil, err)
+			now6 := time.Now()
+			log.Println(now6.Sub(now5), len(res), "retrieved with one sync")
+			assertEqual((i+1)*n1*n2, len(res))
+			assertEqual(tm.UTC(), res[0][2])
+			assertEqual(tm2.UTC(), res[len(res)-1][2])
+		}
 		log.Println()
 	}
 }

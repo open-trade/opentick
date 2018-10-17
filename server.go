@@ -43,14 +43,19 @@ func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurr
 			defaultDBs[i] = fdb.MustOpen(fdbClusterFile, []byte("DB"))
 		}
 	}
-	ln, err := net.Listen("tcp", addr)
+	laddr, err1 := net.ResolveTCPAddr("tcp", addr)
+	if err1 != nil {
+		return err1
+	}
+	ln, err2 := net.ListenTCP("tcp", laddr)
 	log.Println("Listening on " + addr)
-	if err != nil {
-		return err
+	if err2 != nil {
+		return err2
 	}
 	defer ln.Close()
 	for {
-		conn, err := ln.Accept()
+		conn, err := ln.AcceptTCP()
+		conn.SetNoDelay(true)
 		if err != nil {
 			return err
 		}
@@ -113,11 +118,6 @@ func handleConnection(conn net.Conn) {
 }
 
 func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
-	defer func() {
-		if err := recover(); err != nil {
-			// log.Println(err)
-		}
-	}()
 	var data []byte
 	var err error
 	if useJson {
@@ -126,7 +126,8 @@ func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
 		data, err = bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
 	}
 	if err != nil {
-		panic(err)
+		reply(ticker, "Internal error: "+err.Error(), ch, useJson)
+		return
 	}
 	if len(data) > math.MaxUint32 {
 		reply(ticker, "Results too large", ch, useJson)
