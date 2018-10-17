@@ -359,8 +359,8 @@ func (self *connection) send(data map[string]interface{}) error {
 	if err != nil {
 		panic(err)
 	}
-	var size [8]byte
-	binary.LittleEndian.PutUint64(size[:], uint64(len(out)))
+	var size [4]byte
+	binary.LittleEndian.PutUint32(size[:], uint32(len(out)))
 	out = append(size[:], out...)
 	n := len(out)
 	self.mutex.Lock()
@@ -387,8 +387,8 @@ func recv(c *connection) {
 	defer c.cond.Broadcast()
 	timeout := 100 * time.Millisecond
 	for {
-		var head [8]byte
-		tmp := head[:8]
+		var head [4]byte
+		tmp := head[:4]
 		n := len(tmp)
 		for n > 0 {
 			c.conn.SetReadDeadline(time.Now().Add(timeout))
@@ -404,7 +404,7 @@ func recv(c *connection) {
 			tmp = tmp[n2:]
 			n -= n2
 		}
-		bodyLen := binary.LittleEndian.Uint64(head[:])
+		bodyLen := binary.LittleEndian.Uint32(head[:])
 		if bodyLen == 0 {
 			continue
 		}

@@ -154,7 +154,7 @@ class Connection(threading.Thread):
 
   def run(self):
     while True:
-      n = 8
+      n = 4
       head = six.b('')
       while n > 0:
         try:
@@ -170,8 +170,8 @@ class Connection(threading.Thread):
           return
         n -= len(got)
         head += got
-      assert (len(head) == 8)
-      n = struct.unpack('<Q', head)[0]
+      assert (len(head) == 4)
+      n = struct.unpack('<I', head)[0]
       body = six.b('')
       while n > 0:
         try:
@@ -193,7 +193,7 @@ class Connection(threading.Thread):
   def __send(self, msg):
     out = BSON.encode(msg)
     n = len(out)
-    out = struct.pack('<Q', n) + out
+    out = struct.pack('<I', n) + out
     n = len(out)
     self._mutex.acquire()
     while n > 0:
