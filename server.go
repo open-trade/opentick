@@ -173,6 +173,7 @@ func (self *connection) process() {
 		for {
 			if self.closed {
 				log.Println("Process thread ended from", self.conn.RemoteAddr())
+				self.mutex.Unlock()
 				return
 			} else if len(self.store) == 0 || unfinished > int32(sMaxConcurrency) {
 				self.cond.Wait()
