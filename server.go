@@ -118,6 +118,11 @@ func handleConnection(conn net.Conn) {
 }
 
 func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
+	defer func() {
+		if err := recover(); err != nil {
+			// send on closed channel
+		}
+	}()
 	var data []byte
 	var err error
 	if useJson {

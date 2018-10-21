@@ -36,7 +36,10 @@ func Connect(host string, port int, dbName string) (ret Connection, err error) {
 		err = err2
 		return
 	}
-	conn.SetNoDelay(true)
+	err = conn.SetNoDelay(true)
+	if err != nil {
+		return
+	}
 	m := &sync.Mutex{}
 	c := &connection{
 		conn:      conn,
