@@ -12,18 +12,20 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 var defaultDBs []fdb.Transactor
 
 var sNumDatabaseConn = 1
 var sMaxConcurrency = 100
+var sTimeout = 0
 
 func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency int) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency int, timeout int) error {
 	log.SetOutput(os.Stdout)
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
@@ -34,6 +36,10 @@ func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurr
 		sMaxConcurrency = maxConcurrency
 	}
 	log.Println("Max concurrency of one connection:", sMaxConcurrency)
+	if timeout > 0 {
+		sTimeout = timeout
+	}
+	log.Println("timeout:", sTimeout, "(s)")
 	defaultDBs = make([]fdb.Transactor, sNumDatabaseConn)
 	for i := 0; i < sNumDatabaseConn; i++ {
 		if fdbClusterFile == "" {
@@ -78,22 +84,38 @@ func (self *connection) Send(msg []byte) {
 }
 
 func handleConnection(conn net.Conn) {
+	timeout := time.Duration(sTimeout) * time.Second
 	log.Println("New connection from", conn.RemoteAddr())
-	client := connection{ch: make(chan []byte), conn: conn}
+	ch := make(chan []byte)
+	client := connection{ch: ch, conn: conn}
 	client.cond = sync.NewCond(&client.mutex)
 	defer client.close()
 	go client.writeToConnection()
 	go client.process()
+	waitHeartbeat := false
 	for {
 		var head [4]byte
 		tmp := head[:4]
 		n := len(tmp)
 		for n > 0 {
+			if timeout > 0 {
+				conn.SetReadDeadline(time.Now().Add(timeout))
+			}
 			n2, err := conn.Read(tmp)
 			if err != nil {
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					if !waitHeartbeat {
+						var size [4]byte
+						binary.LittleEndian.PutUint32(size[:], 1)
+						ch <- append(size[:], byte('H'))
+						waitHeartbeat = true
+						continue
+					}
+				}
 				log.Println(err.Error(), "of connection", conn.RemoteAddr())
 				return
 			}
+			waitHeartbeat = false
 			tmp = tmp[n2:]
 			n -= n2
 		}
@@ -105,11 +127,24 @@ func handleConnection(conn net.Conn) {
 		tmp = body
 		n = len(tmp)
 		for n > 0 {
+			if timeout > 0 {
+				conn.SetReadDeadline(time.Now().Add(timeout))
+			}
 			n2, err := conn.Read(tmp)
 			if err != nil {
+				if e, ok := err.(net.Error); ok && e.Timeout() {
+					if !waitHeartbeat {
+						var size [4]byte
+						binary.LittleEndian.PutUint32(size[:], 1)
+						ch <- append(size[:], byte('H'))
+						waitHeartbeat = true
+						continue
+					}
+				}
 				log.Println(err.Error(), "of connection", conn.RemoteAddr())
 				return
 			}
+			waitHeartbeat = false
 			tmp = tmp[n2:]
 			n -= n2
 		}
@@ -217,6 +252,10 @@ func (self *connection) process() {
 			if err != nil {
 				if string(body) == "protocol=json" {
 					useJson = true
+					return
+				}
+				if string(body) == "H" { // heartbeat request
+					self.ch <- []byte{0, 0, 0, 0}
 					return
 				}
 				res = "Invalid bson: " + err.Error()

@@ -365,9 +365,13 @@ func (self *connection) getTicker() int {
 }
 
 func (self *connection) send(data map[string]interface{}) error {
-	out, err := bson.Marshal(data)
-	if err != nil {
-		panic(err)
+	var out []byte
+	var err error
+	if data != nil {
+		out, err = bson.Marshal(data)
+		if err != nil {
+			panic(err)
+		}
 	}
 	var size [4]byte
 	binary.LittleEndian.PutUint32(size[:], uint32(len(out)))
@@ -421,6 +425,7 @@ func recv(c *connection) {
 		body := make([]byte, bodyLen)
 		tmp = body
 		n = len(tmp)
+		n0 := n
 		for n > 0 {
 			c.conn.SetReadDeadline(time.Now().Add(timeout))
 			n2, err := c.conn.Read(tmp)
@@ -434,6 +439,10 @@ func recv(c *connection) {
 			}
 			tmp = tmp[n2:]
 			n -= n2
+		}
+		if n0 == 1 && string(body) == "H" { // heartbeat
+			c.send(nil)
+			continue
 		}
 		var data map[string]interface{}
 		var err error

@@ -3,7 +3,7 @@ module github.com/opentradesolutions/opentick
 require (
 	github.com/alecthomas/participle v0.1.0
 	github.com/alecthomas/repr v0.0.0-20180818092828-117648cd9897
-	github.com/apple/foundationdb v0.0.0-20180511013059-16e85d53a559
+	github.com/apple/foundationdb v0.0.0-20181113211710-8903c5f6212a
 	github.com/cosiner/argv v0.0.0-20170225145430-13bacc38a0a5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidrjenni/reftools v0.0.0-20180912181019-6bd7b709eec2 // indirect

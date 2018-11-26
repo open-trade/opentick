@@ -171,7 +171,7 @@ class Connection(threading.Thread):
         n -= len(got)
         head += got
       assert (len(head) == 4)
-      n = struct.unpack('<I', head)[0]
+      n0 = n = struct.unpack('<I', head)[0]
       body = six.b('')
       while n > 0:
         try:
@@ -187,11 +187,20 @@ class Connection(threading.Thread):
           return
         n -= len(got)
         body += got
+      if n0 == 1 and body == six.b('H'): # heartbeat
+        self.__send()
+        continue
       msg = BSON(body).decode()
       self.__notify(msg['0'], msg)
 
-  def __send(self, msg):
-    out = BSON.encode(msg)
+  def __send(self, msg=None):
+    out = None
+    if not msg:
+      out = six.b('')
+    elif msg == six.b('H'):
+      out = msg
+    else:
+      out = BSON.encode(msg)
     n = len(out)
     out = struct.pack('<I', n) + out
     n = len(out)

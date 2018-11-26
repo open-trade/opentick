@@ -10,6 +10,7 @@ var addr = flag.String("addr", "0.0.0.0:1116", "tcp listen address")
 var fdbClusterFile = flag.String("fdb_cluster_file", "", "path of fdb cluster file, use default path if not specified")
 var n = flag.Int("num_foundation_db_connections", 1, "number of connections to underlying FoundationDB")
 var n2 = flag.Int("max_concurrency", 100, "max concurrency of one connection, too big concurrency may cause performance degradation")
+var n3 = flag.Int("timeout", 0, "client connection timeout in seconds")
 
 func main() {
 	// CPU profiling by default
@@ -17,7 +18,7 @@ func main() {
 	// defer profile.Start(profile.MemProfile).Stop()
 	// go tool pprof --pdf ~/go/bin/yourbinary /var/path/to/cpu.pprof > file.pdf
 	flag.Parse()
-	err := opentick.StartServer(*addr, *fdbClusterFile, *n, *n2)
+	err := opentick.StartServer(*addr, *fdbClusterFile, *n, *n2, *n3)
 	if err != nil {
 		panic(err)
 	}
