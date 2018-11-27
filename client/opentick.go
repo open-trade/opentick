@@ -13,7 +13,7 @@ import (
 )
 
 type Future interface {
-	Get(timeout ...int) ([][]interface{}, error) // timeout in seconds
+	Get(timeout ...float64) ([][]interface{}, error) // timeout in seconds
 }
 
 type Connection interface {
@@ -135,12 +135,12 @@ type futures struct {
 	futs []Future
 }
 
-func (self *future) get(timeout ...int) (interface{}, error) {
+func (self *future) get(timeout ...float64) (interface{}, error) {
 	self.conn.mutexCond.Lock()
 	defer self.conn.mutexCond.Unlock()
 	var timeout2 time.Duration
 	if len(timeout) > 0 {
-		timeout2 = time.Duration(time.Duration(timeout[0]) * time.Second)
+		timeout2 = time.Duration(time.Duration(int(timeout[0]*1e9)) * time.Nanosecond)
 	}
 	tm := time.Now()
 	for {
@@ -162,7 +162,7 @@ func (self *future) get(timeout ...int) (interface{}, error) {
 	}
 }
 
-func (self *future) Get(timeout ...int) (ret [][]interface{}, err error) {
+func (self *future) Get(timeout ...float64) (ret [][]interface{}, err error) {
 	var res interface{}
 	res, err = self.get(timeout...)
 	if res == nil || err != nil {
@@ -299,7 +299,7 @@ func (self *connection) executeRangesAsync(sql string, args ...interface{}) (ret
 	return &futures{futs}, nil
 }
 
-func (self *futures) Get(timeout ...int) (ret [][]interface{}, err error) {
+func (self *futures) Get(timeout ...float64) (ret [][]interface{}, err error) {
 	for _, fut := range self.futs {
 		ret2, err2 := fut.Get(timeout...)
 		if err2 != nil {
@@ -399,7 +399,7 @@ func (self *connection) notify(ticker int, msg interface{}) {
 
 func recv(c *connection) {
 	defer c.cond.Broadcast()
-	timeout := 100 * time.Millisecond
+	timeout := time.Millisecond
 	for {
 		var head [4]byte
 		tmp := head[:4]

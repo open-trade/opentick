@@ -44,7 +44,7 @@ func main() {
 		}
 		now3 := time.Now()
 		log.Println(now3.Sub(now2), now3.Sub(now), i, len(futs), "all insert futures get done")
-		res, err = futs[0].Get(1)
+		res, err = futs[0].Get(1.)
 		assertEqual("Timeout", err.Error())
 		futs = nil
 		now = time.Now()

@@ -45,7 +45,6 @@ def split_range(start, end, num_parts):
   return out
 
 
-# not thread-safe
 class Connection(threading.Thread):
 
   def __init__(self, sock, db_name):
@@ -172,6 +171,7 @@ class Connection(threading.Thread):
         head += got
       assert (len(head) == 4)
       n0 = n = struct.unpack('<I', head)[0]
+      if not n: continue
       body = six.b('')
       while n > 0:
         try:
