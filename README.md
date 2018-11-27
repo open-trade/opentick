@@ -1,6 +1,6 @@
 # OpenTick
 
-![OpenTrade Logo](https://github.com/opentradesolutions/opentrade/blob/master/web/img.png)
+![OpenTrade Logo](https://github.com/opentradesolutions/opentrade/blob/master/web/img/ot.png)
 
 OpenTick is a fast tick database built on [FoundationDB](https://www.foundationdb.org/).
 
@@ -64,7 +64,7 @@ user@host:~/opentick/bindings/cpp$ make test
 
 # Sample Code (C++)
 
-* Create database and table
+* **Create database and table**
 ```C++
 auto conn = Connect("127.0.0.1", 1116);
 conn->Execute("create database if not exists test");
@@ -76,7 +76,7 @@ conn->Execute(R"(
 )");
 ```
 
-* Execute
+* **Execute**
 ```C++
 // opentick prepares the sql statement automatically, no need to prepare explicitly
 auto fut = conn->ExecuteAsync(
@@ -87,7 +87,7 @@ auto res = conn->Execute(
         "select tm from test where sec=1 and interval=? limit -2", Args{1});
 ```
 
-* Insert
+* **Insert**
 ```C++
 static const std::string kInsert =
     "insert into test(sec, interval, tm, open, high, low, close, v, vwap) "
@@ -100,7 +100,7 @@ for (auto i = 0; i < 1000; ++i) {
 for (auto fut : futs) fut->Get();
 ```
 
-* Batch Insert
+* **Batch Insert**
 ```C++
 Argss argss;
 for (auto i = 0; i < 1000; ++i) {
