@@ -4,29 +4,13 @@ require (
 	github.com/alecthomas/participle v0.1.0
 	github.com/alecthomas/repr v0.0.0-20180818092828-117648cd9897
 	github.com/apple/foundationdb v0.0.0-20181113211710-8903c5f6212a
-	github.com/cosiner/argv v0.0.0-20170225145430-13bacc38a0a5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/davidrjenni/reftools v0.0.0-20180912181019-6bd7b709eec2 // indirect
-	github.com/k0kubun/pp v2.3.0+incompatible // indirect
-	github.com/koron/iferr v0.0.0-20180615142939-bb332a3b1d91 // indirect
-	github.com/mattn/go-colorable v0.0.9 // indirect
-	github.com/mattn/go-isatty v0.0.4 // indirect
-	github.com/mitchellh/go-homedir v1.0.0 // indirect
-	github.com/motemen/go-quickfix v0.0.0-20160413151302-5c522febc679 // indirect
-	github.com/motemen/gore v0.3.0 // indirect
-	github.com/peterh/liner v1.1.0 // indirect
+	github.com/kr/pretty v0.1.0 // indirect
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
-	github.com/pkg/profile v1.2.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/sirupsen/logrus v1.0.6 // indirect
-	github.com/spf13/cobra v0.0.3 // indirect
-	github.com/spf13/pflag v1.0.2 // indirect
 	github.com/stretchr/testify v1.2.2
-	golang.org/x/arch v0.0.0-20180516175055-5de9028c2478 // indirect
-	golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b // indirect
 	golang.org/x/exp v0.0.0-20180907224206-e88728d35e99 // indirect
-	golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e // indirect
-	golang.org/x/tools v0.0.0-20180911133044-677d2ff680c1 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/mgo.v2 v2.0.0-20180705113604-9856a29383ce
+	gopkg.in/yaml.v2 v2.2.1 // indirect
 )

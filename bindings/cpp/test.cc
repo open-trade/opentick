@@ -57,7 +57,7 @@ int main() {
     auto now3 = system_clock::now();
     auto diff2 = duration_cast<microseconds>(now3 - now2).count() / 1e6;
     diff = duration_cast<microseconds>(now3 - now).count() / 1e6;
-    LOG(diff2 << ' ' << diff << ' ' << i << ' ' << futs.size()
+    LOG(diff2 << "s " << diff << "s " << i << ' ' << futs.size()
               << " all insert futures get done");
     futs.clear();
     now = system_clock::now();
@@ -79,7 +79,7 @@ int main() {
     now3 = system_clock::now();
     diff2 = duration_cast<microseconds>(now3 - now2).count() / 1e6;
     diff = duration_cast<microseconds>(now3 - now).count() / 1e6;
-    LOG(diff2 << ' ' << diff << ' ' << i << ' ' << futs.size()
+    LOG(diff2 << "s " << diff << "s " << i << ' ' << futs.size()
               << " all batch insert futures get done");
     auto res = conn->Execute(
         "select tm from test where sec=1 and interval=? and tm=?", Args{i, tm});
@@ -103,7 +103,7 @@ int main() {
     }
     now2 = system_clock::now();
     diff = duration_cast<microseconds>(now2 - now).count() / 1e6;
-    LOG(diff << ' ' << res2.size() << " retrieved with async");
+    LOG(diff << "s " << res2.size() << " retrieved with async");
     std::cerr << std::endl;
   }
   return 0;

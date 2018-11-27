@@ -25,7 +25,7 @@ func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency int, timeout int) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency, timeout int) error {
 	log.SetOutput(os.Stdout)
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
