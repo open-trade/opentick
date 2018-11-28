@@ -59,8 +59,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void Notify(int, const Value&);
 
  private:
-  std::vector<std::uint8_t> msg_buf_;
-  std::deque<std::string> outbox_;
+  std::vector<std::uint8_t> msg_in_buf_;
+  std::vector<std::uint8_t> msg_out_buf_;
+  std::vector<std::uint8_t> outbox_;
   boost::asio::io_service io_service_;
   boost::asio::io_service::work worker_;
   boost::asio::ip::tcp::socket socket_;
@@ -140,9 +141,9 @@ inline void Connection::Use(const std::string& dbName) {
 }
 
 inline void Connection::ReadHead() {
-  if (msg_buf_.size() < 4) msg_buf_.resize(4);
+  if (msg_in_buf_.size() < 4) msg_in_buf_.resize(4);
   auto self = shared_from_this();
-  boost::asio::async_read(socket_, boost::asio::buffer(msg_buf_, 4),
+  boost::asio::async_read(socket_, boost::asio::buffer(msg_in_buf_, 4),
                           [=](const boost::system::error_code& e, size_t) {
                             if (e) {
                               std::cerr << "OpenTick: connection closed: "
@@ -151,7 +152,7 @@ inline void Connection::ReadHead() {
                               return;
                             }
                             unsigned n;
-                            memcpy(&n, msg_buf_.data(), 4);
+                            memcpy(&n, msg_in_buf_.data(), 4);
                             n = boost::endian::little_to_native(n);
                             if (n)
                               self->ReadBody(n);
@@ -161,23 +162,23 @@ inline void Connection::ReadHead() {
 }
 
 inline void Connection::ReadBody(unsigned len) {
-  msg_buf_.resize(len);
+  msg_in_buf_.resize(len);
   auto self = shared_from_this();
   boost::asio::async_read(
-      socket_, boost::asio::buffer(msg_buf_, len),
+      socket_, boost::asio::buffer(msg_in_buf_, len),
       [self, len](const boost::system::error_code& e, size_t) {
         if (e) {
           std::cerr << "OpenTick: connection closed" << std::endl;
           self->Notify(-1, e.message());
           return;
         }
-        if (len == 1 && self->msg_buf_[0] == 'H') {
+        if (len == 1 && self->msg_in_buf_[0] == 'H') {
           self->Send(std::string(""));
           self->ReadHead();
           return;
         }
         try {
-          auto j = json::from_bson(self->msg_buf_);
+          auto j = json::from_bson(self->msg_in_buf_);
           auto ticker = j["0"].get<std::int64_t>();
           auto tmp = j["1"];
           if (tmp.is_string()) {
@@ -234,31 +235,32 @@ inline void Connection::Send(T&& msg) {
   if (!IsConnected()) return;
   auto self = shared_from_this();
   io_service_.post([msg = std::move(msg), self]() {
-    std::string out;
-    out.resize(4 + msg.size());
+    auto& buf = self->msg_out_buf_;
+    auto n0 = buf.size();
+    buf.resize(n0 + 4 + msg.size());
     unsigned n = boost::endian::native_to_little(msg.size());
-    memcpy(reinterpret_cast<void*>(out.data()), &n, 4);
-    memcpy(reinterpret_cast<void*>(out.data() + 4), msg.data(), msg.size());
-    self->outbox_.push_back(out);
-    if (self->outbox_.size() > 1) return;
+    memcpy(reinterpret_cast<void*>(buf.data() + n0), &n, 4);
+    memcpy(reinterpret_cast<void*>(buf.data() + n0 + 4), msg.data(),
+           msg.size());
+    if (self->outbox_.size()) return;
     self->Write();
   });
 }
 
 inline void Connection::Write() {
+  assert(outbox_.empty());
+  outbox_.swap(msg_out_buf_);
   auto self = shared_from_this();
   boost::asio::async_write(
-      socket_, boost::asio::buffer(outbox_.front()),
+      socket_, boost::asio::buffer(outbox_, outbox_.size()),
       [self](const boost::system::error_code& e, std::size_t) {
         if (e) {
           std::cerr << "OpenTick: failed to send message. Error code: "
                     << e.message() << std::endl;
           self->Notify(-1, e.message());
         } else {
-          self->outbox_.pop_front();
-          if (!self->outbox_.empty()) {
-            self->Write();
-          }
+          self->outbox_.clear();
+          if (self->msg_out_buf_.size()) self->Write();
         }
       });
 }
