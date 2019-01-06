@@ -6,6 +6,8 @@ OpenTick is a fast tick database built on [FoundationDB](https://www.foundationd
 
 # Installation on Ubuntu
 
+You need to use **Go >=1.11** which has module support.
+
 ```bash
 wget https://www.foundationdb.org/downloads/6.0.15/ubuntu/installers/foundationdb-server_6.0.15-1_amd64.deb
 wget https://www.foundationdb.org/downloads/6.0.15/ubuntu/installers/foundationdb-clients_6.0.15-1_amd64.deb
