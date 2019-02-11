@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-var sqlSelectStmt = "select a, b from test where a > 1.2 and b < 2 limit -2"
+var sqlSelectStmt = "select a, adj(b) from test where a > 1.2 and b < 2 limit -2"
 var sqlInsertStmt = "INSERT into x(x, y) values(1., ?)"
 var sqlInsertAst = `
 &opentick.Ast{
@@ -36,9 +36,16 @@ var sqlSelectAst = `
 &opentick.Ast{
   Select: &opentick.AstSelect{
     Selected: &opentick.AstSelectExpression{
-      Cols: []string{
-        "a",
-        "b",
+      Cols: []opentick.AstSelectCol{
+        opentick.AstSelectCol{
+          Name: &"a",
+        },
+        opentick.AstSelectCol{
+          Func: &opentick.AstSelectFunc{
+            Name: &"ADJ",
+            Col: &"b",
+          },
+        },
       },
     },
     Table: &opentick.AstTableName{

@@ -9,6 +9,7 @@ import (
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
 		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
+		`|(?P<Func>(?i)\b(ADJ)\b)` +
 		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
@@ -18,7 +19,7 @@ var (
 		&Ast{},
 		participle.Lexer(sqlLexer),
 		participle.Unquote(sqlLexer, "String"),
-		participle.Upper(sqlLexer, "Keyword"),
+		participle.Upper(sqlLexer, "Keyword", "Func"),
 	)
 )
 
@@ -118,8 +119,18 @@ type AstSelect struct {
 }
 
 type AstSelectExpression struct {
-	All  *string  `@"*"`
-	Cols []string `| @Ident {"," @Ident}`
+	All  *string        `@"*"`
+	Cols []AstSelectCol `| @@ {"," @@}`
+}
+
+type AstSelectCol struct {
+	Name *string        `@Ident`
+	Func *AstSelectFunc `| @@`
+}
+
+type AstSelectFunc struct {
+	Name *string `@Func "("`
+	Col  *string `@Ident ")"`
 }
 
 type AstExpression struct {

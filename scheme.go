@@ -58,6 +58,7 @@ func CreateDatabase(db fdb.Transactor, dbName string) (err error) {
 		err = err2
 		return
 	}
+	CreateAdj(db, dbName)
 	return
 }
 
@@ -220,6 +221,23 @@ func decodeTableScheme(bytes []byte) *TableScheme {
 	tbl := TableScheme{Cols: cols, Keys: keys}
 	tbl.fill()
 	return &tbl
+}
+
+func CreateAdj(db fdb.Transactor, dbName string) (err error) {
+	stmt, err1 := Parse(`
+	create table "adj"(
+		sec int,
+  	tm timestamp,
+		px double,
+		vol double,
+		primary key (sec, tm)
+	)
+  `)
+	if err1 != nil {
+		return err1
+	}
+	err = CreateTable(db, dbName, stmt.Create.Table)
+	return
 }
 
 func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err error) {

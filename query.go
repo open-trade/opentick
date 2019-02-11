@@ -74,6 +74,9 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 					return
 				}
 			}
+			if dbName == "adj" {
+				return nil, errors.New("adj is reserved")
+			}
 			err = CreateTable(db, dbName, ast.Create.Table)
 		}
 	} else if ast.Drop != nil {
@@ -321,15 +324,19 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 	}
 	used := make([]bool, len(scheme.Cols))
 	stmt.Cols = make([]*TableColDef, len(ast.Selected.Cols))
-	for j, colName := range ast.Selected.Cols {
-		col, ok := scheme.NameMap[colName]
+	for j, col := range ast.Selected.Cols {
+		colName := col.Name
+		if colName == nil {
+			colName = col.Func.Col
+		}
+		col, ok := scheme.NameMap[*colName]
 		if !ok {
-			err = errors.New("Undefined column name " + colName)
+			err = errors.New("Undefined column name " + *colName)
 			return
 		}
 		i := col.PosCol
 		if used[i] {
-			err = errors.New("Duplicate column name " + colName)
+			err = errors.New("Duplicate column name " + *colName)
 			return
 		}
 		used[i] = true

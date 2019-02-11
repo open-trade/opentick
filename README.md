@@ -9,9 +9,9 @@ OpenTick is a fast tick database built on [FoundationDB](https://www.foundationd
 You need to use **Go >=1.11** which has module support.
 
 ```bash
-wget https://www.foundationdb.org/downloads/6.0.15/ubuntu/installers/foundationdb-server_6.0.15-1_amd64.deb
-wget https://www.foundationdb.org/downloads/6.0.15/ubuntu/installers/foundationdb-clients_6.0.15-1_amd64.deb
-sudo dpkg -i foundationdb-clients_6.0.15-1_amd64.deb foundationdb-server_6.0.15-1_amd64.deb
+wget https://www.foundationdb.org/downloads/6.0.18/ubuntu/installers/foundationdb-server_6.0.18-1_amd64.deb
+wget https://www.foundationdb.org/downloads/6.0.18/ubuntu/installers/foundationdb-clients_6.0.18-1_amd64.deb
+sudo dpkg -i foundationdb-clients_6.0.18-1_amd64.deb foundationdb-server_6.0.18-1_amd64.deb
 git clone https://github.com/opentradesolutions/opentick
 make build
 sudo apt install nodejs
