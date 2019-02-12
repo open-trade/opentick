@@ -10,8 +10,30 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+type adjValue struct {
+	Tm  [2]int64
+	Px  float64
+	Vol float64
+}
+
+type adjCacheS struct {
+	mut    sync.Mutex
+	values map[string]map[int][]adjValue
+}
+
+func (self *adjCacheS) clear(dbName string) {
+	self.mut.Lock()
+	delete(self.values, dbName)
+	self.mut.Unlock()
+}
+
+var adjCache = adjCacheS{
+	values: make(map[string]map[int][]adjValue),
+}
 
 func Resolve(db fdb.Transactor, dbName string, ast *Ast) (stmt interface{}, err error) {
 	if ast.Select != nil {
@@ -82,9 +104,13 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 	} else if ast.Drop != nil {
 		if ast.Drop.Database != nil {
 			err = DropDatabase(db, *ast.Drop.Database)
+			adjCache.clear(*ast.Drop.Database)
 		} else if ast.Drop.Table != nil {
 			if dbName == "" {
 				dbName = ast.Drop.Table.DatabaseName()
+			}
+			if ast.Drop.Table.TableName() == "adj" {
+				adjCache.clear(dbName)
 			}
 			err = DropTable(db, dbName, ast.Drop.Table.TableName())
 		}
@@ -183,6 +209,9 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 }
 
 func executeDelete(db fdb.Transactor, stmt *deleteStmt, args []interface{}) (err error) {
+	if stmt.Scheme.TblName == "adj" {
+		adjCache.clear(stmt.Scheme.DbName)
+	}
 	tmp, _, err1 := executeWhere(db, stmt, args)
 	if err1 != nil {
 		err = err1
@@ -305,6 +334,9 @@ func prepareInsert(stmt *insertStmt, args []interface{}, parts *[2][]tuple.Tuple
 }
 
 func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err error) {
+	if stmt.Scheme.TblName == "adj" {
+		adjCache.clear(stmt.Scheme.DbName)
+	}
 	argsArray := [1][]interface{}{args}
 	return BatchInsert(db, stmt, argsArray[:])
 }
@@ -355,9 +387,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		if funcName != nil {
 			tmp := strings.ToLower(*funcName)
 			funcName = &tmp
-			stmt.HasFunc = true
 			if tmp == "adj" {
-				stmt.HasAdj = true
 				tmp = strings.ToLower(col.Name)
 				if strings.Contains(tmp, "qty") || strings.Contains(tmp, "vol") || strings.Contains(tmp, "size") {
 					tmp = "adj_vol"
@@ -365,12 +395,11 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 					tmp = "adj_px"
 				}
 				funcName = &tmp
-			} else if strings.HasPrefix(tmp, "adj_") {
-				stmt.HasAdj = true
 			}
 		}
 		stmt.Funcs[j] = funcName
 	}
+	getAdjTuples(&stmt)
 	return
 }
 
@@ -378,6 +407,11 @@ type whereStmt interface {
 	GetNumPlaceholders() int
 	GetConds() []condition
 	GetScheme() *TableScheme
+}
+
+type adjTuple struct {
+	Pos int
+	Adj int
 }
 
 type selectStmt struct {
@@ -388,8 +422,8 @@ type selectStmt struct {
 	NumPlaceholders int
 	Limit           int
 	Reverse         bool
-	HasFunc         bool
-	HasAdj          bool
+	Adjs            []adjTuple
+	PosTm           int
 }
 
 func (self *selectStmt) GetNumPlaceholders() int {
@@ -729,14 +763,63 @@ func validateConditionArgs(scheme *TableScheme, origConds []condition, args []in
 	return
 }
 
-func applyFunc(stmt *selectStmt, recs []([2]tuple.Tuple)) {
-	if !stmt.HasFunc {
+func getAdjTuples(stmt *selectStmt) {
+	var adjs []adjTuple
+	stmt.PosTm = -1
+	for i, col := range stmt.Scheme.Keys {
+		switch col.Type {
+		case Timestamp:
+			stmt.PosTm = i
+			break
+		}
+	}
+	if stmt.PosTm == -1 {
 		return
+	}
+	for i, funcName := range stmt.Funcs {
+		if funcName == nil {
+			continue
+		}
+		j := 0
+		switch *funcName {
+		case "adj_px":
+			j = 1
+		case "adj_vol":
+			j = 2
+		default:
+			continue
+		}
+		stmt.Funcs[i] = nil
+		col := stmt.Cols[i]
+		if !col.IsKey {
+			adjs = append(adjs, adjTuple{int(col.Pos), j})
+		}
+	}
+	stmt.Adjs = adjs
+}
+
+func applyFunc(stmt *selectStmt, recs []([2]tuple.Tuple)) {
+	adjs := stmt.Adjs
+	if adjs != nil {
 	}
 }
 
 func applyFuncOne(stmt *selectStmt, value tuple.Tuple) {
-	if !stmt.HasFunc {
-		return
+	adjs := stmt.Adjs
+	if adjs != nil {
 	}
+}
+
+func (self *adjCacheS) get(dbName string, sec int) (ret []adjValue) {
+	self.mut.Lock()
+	if values, ok := self.values[dbName]; ok {
+		if ret, ok = values[sec]; ok {
+			return
+		}
+	} else {
+		values = make(map[int][]adjValue)
+		self.values[dbName] = values
+	}
+	self.mut.Unlock()
+	return
 }

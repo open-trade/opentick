@@ -145,6 +145,8 @@ func decodeTableColDef(bytes []byte, out *TableColDef, version uint32) []byte {
 }
 
 type TableScheme struct {
+	DbName  string
+	TblName string
 	Cols    []*TableColDef
 	Keys    []*TableColDef
 	Values  []*TableColDef
@@ -405,6 +407,8 @@ func GetTableScheme(db fdb.Transactor, dbName string, tblName string) (tbl *Tabl
 	}
 	tbl = ret.(*TableScheme)
 	tbl.Dir = dirTable
+	tbl.DbName = dbName
+	tbl.TblName = tblName
 	TableSchemeMap.Store(fullName, tbl)
 	return
 }
