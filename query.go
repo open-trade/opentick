@@ -124,6 +124,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			return
 		}
 		res = []([]interface{}){make([]interface{}, len(stmt.Cols))}
+		applyFuncOne(stmt, value)
 		for i, col := range stmt.Cols {
 			if col.IsKey {
 				res[0][i] = conds[col.Pos].Equal
@@ -148,9 +149,8 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 	if len(recs) == 0 {
 		return
 	}
-	res = make([]([]interface{}), len(recs))
+	tmpRes := make([][2]tuple.Tuple, len(recs))
 	for i, rec := range recs {
-		res[i] = make([]interface{}, len(stmt.Cols))
 		key, err1 := stmt.Scheme.Dir.Unpack(rec.Key)
 		if err1 != nil {
 			err = errors.New("Internal errror: " + err1.Error())
@@ -161,13 +161,21 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			err = errors.New("Internal errror: " + err2.Error())
 			return
 		}
+		tmpRes[i] = [2]tuple.Tuple{key, value}
+	}
+	applyFunc(stmt, tmpRes)
+	res = make([]([]interface{}), len(recs))
+	for i, tmp := range tmpRes {
+		key, value := tmp[0], tmp[1]
+		row := make([]interface{}, len(stmt.Cols))
+		res[i] = row
 		for j, col := range stmt.Cols {
 			if col.IsKey {
 				if int(col.Pos) < len(key) {
-					res[i][j] = key[col.Pos]
+					row[j] = key[col.Pos]
 				}
 			} else if int(col.Pos) < len(value) {
-				res[i][j] = value[col.Pos]
+				row[j] = value[col.Pos]
 			}
 		}
 	}
@@ -324,10 +332,13 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 	}
 	used := make([]bool, len(scheme.Cols))
 	stmt.Cols = make([]*TableColDef, len(ast.Selected.Cols))
+	stmt.Funcs = make([]*string, len(ast.Selected.Cols))
 	for j, col := range ast.Selected.Cols {
 		colName := col.Name
+		var funcName *string
 		if colName == nil {
 			colName = col.Func.Col
+			funcName = col.Func.Name
 		}
 		col, ok := scheme.NameMap[*colName]
 		if !ok {
@@ -341,6 +352,24 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		}
 		used[i] = true
 		stmt.Cols[j] = col
+		if funcName != nil {
+			tmp := strings.ToLower(*funcName)
+			funcName = &tmp
+			stmt.HasFunc = true
+			if tmp == "adj" {
+				stmt.HasAdj = true
+				tmp = strings.ToLower(col.Name)
+				if strings.Contains(tmp, "qty") || strings.Contains(tmp, "vol") || strings.Contains(tmp, "size") {
+					tmp = "adj_vol"
+				} else {
+					tmp = "adj_px"
+				}
+				funcName = &tmp
+			} else if strings.HasPrefix(tmp, "adj_") {
+				stmt.HasAdj = true
+			}
+		}
+		stmt.Funcs[j] = funcName
 	}
 	return
 }
@@ -355,9 +384,12 @@ type selectStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition    // <= len(Scheme.Keys)
 	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
+	Funcs           []*string
 	NumPlaceholders int
 	Limit           int
 	Reverse         bool
+	HasFunc         bool
+	HasAdj          bool
 }
 
 func (self *selectStmt) GetNumPlaceholders() int {
@@ -695,4 +727,16 @@ func validateConditionArgs(scheme *TableScheme, origConds []condition, args []in
 		}
 	}
 	return
+}
+
+func applyFunc(stmt *selectStmt, recs []([2]tuple.Tuple)) {
+	if !stmt.HasFunc {
+		return
+	}
+}
+
+func applyFuncOne(stmt *selectStmt, value tuple.Tuple) {
+	if !stmt.HasFunc {
+		return
+	}
 }
