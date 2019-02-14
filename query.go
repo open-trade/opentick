@@ -10,30 +10,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
-
-type adjValue struct {
-	Tm  int64
-	Px  float64
-	Vol float64
-}
-
-type adjCacheS struct {
-	mut    sync.Mutex
-	values map[string]map[int][]adjValue
-}
-
-func (self *adjCacheS) clear(dbName string) {
-	self.mut.Lock()
-	delete(self.values, dbName)
-	self.mut.Unlock()
-}
-
-var adjCache = adjCacheS{
-	values: make(map[string]map[int][]adjValue),
-}
 
 func Resolve(db fdb.Transactor, dbName string, ast *Ast) (stmt interface{}, err error) {
 	if ast.Select != nil {
@@ -147,7 +125,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 			return
 		}
 		res = []([]interface{}){make([]interface{}, len(stmt.Cols))}
-		applyFuncOne(stmt, value)
+		applyFuncOne(db, stmt, value)
 		for i, col := range stmt.Cols {
 			if col.IsKey {
 				res[0][i] = conds[col.Pos].Equal
@@ -186,7 +164,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 		}
 		tmpRes[i] = [2]tuple.Tuple{key, value}
 	}
-	applyFunc(stmt, tmpRes)
+	applyFunc(db, stmt, tmpRes)
 	res = make([]([]interface{}), len(recs))
 	for i, tmp := range tmpRes {
 		key, value := tmp[0], tmp[1]
@@ -408,7 +386,7 @@ type whereStmt interface {
 
 type adjTuple struct {
 	Pos int
-	Adj int
+	Adj int // 1: px, 2: vol
 }
 
 type selectStmt struct {
@@ -645,6 +623,9 @@ func getFloat(v interface{}) (ret float64, ok bool) {
 	if v1, ok1 := v.(float32); ok1 {
 		return float64(v1), true
 	}
+	if v1, ok1 := getInt(v); ok1 {
+		return float64(v1), true
+	}
 	return
 }
 
@@ -811,83 +792,5 @@ func getAdjTuples(stmt *selectStmt) (err error) {
 			err = errors.New("The last key of the table must be timestamp for applying adj")
 		}
 	}
-	return
-}
-
-func applyFunc(stmt *selectStmt, recs []([2]tuple.Tuple)) {
-	adjs := stmt.Adjs
-	if adjs != nil {
-	}
-}
-
-func applyFuncOne(stmt *selectStmt, value tuple.Tuple) {
-	adjs := stmt.Adjs
-	if adjs != nil {
-	}
-}
-
-var adjSelect, _ = Parse("select * from _adj_ where sec=?")
-
-func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret []adjValue) {
-	self.mut.Lock()
-	values, ok := self.values[dbName]
-	if ok {
-		if ret, ok = values[sec]; ok {
-			return
-		}
-	} else {
-		values = make(map[int][]adjValue)
-		self.values[dbName] = values
-	}
-	self.mut.Unlock()
-	stmt, err := Resolve(db, dbName, adjSelect)
-	if err == nil {
-		tmp, err2 := ExecuteStmt(db, stmt, []interface{}{sec})
-		if err2 == nil {
-			for _, row := range tmp {
-				if len(row) != 4 {
-					break
-				}
-				if _, ok1 := getInt(row[0]); !ok1 {
-					break
-				}
-				tmTuple, ok2 := row[1].(tuple.Tuple)
-				if !ok2 {
-					break
-				}
-				if len(tmTuple) != 2 {
-					break
-				}
-				tm, ok2_1 := getInt(tmTuple[0])
-				if !ok2_1 {
-					break
-				}
-				px, ok3 := getFloat(row[2])
-				if !ok3 {
-					break
-				}
-				vol, ok4 := getFloat(row[3])
-				if !ok4 {
-					break
-				}
-				if px == 0. {
-					px = 1.
-				}
-				if vol == 0. {
-					vol = 1.
-				}
-				ret = append(ret, adjValue{tm, px, vol})
-			}
-		}
-		if len(ret) > 1 {
-			for i := len(ret) - 2; i >= 0; i -= 1 {
-				ret[i].Px *= ret[i+1].Px
-				ret[i].Vol *= ret[i+1].Vol
-			}
-		}
-	}
-	self.mut.Lock()
-	values[sec] = ret
-	self.mut.Unlock()
 	return
 }
