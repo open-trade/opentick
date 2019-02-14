@@ -15,7 +15,7 @@ import (
 )
 
 type adjValue struct {
-	Tm  [2]int64
+	Tm  int64
 	Px  float64
 	Vol float64
 }
@@ -399,7 +399,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		}
 		stmt.Funcs[j] = funcName
 	}
-	getAdjTuples(&stmt)
+	err = getAdjTuples(&stmt)
 	return
 }
 
@@ -423,7 +423,6 @@ type selectStmt struct {
 	Limit           int
 	Reverse         bool
 	Adjs            []adjTuple
-	PosTm           int
 }
 
 func (self *selectStmt) GetNumPlaceholders() int {
@@ -763,19 +762,8 @@ func validateConditionArgs(scheme *TableScheme, origConds []condition, args []in
 	return
 }
 
-func getAdjTuples(stmt *selectStmt) {
+func getAdjTuples(stmt *selectStmt) (err error) {
 	var adjs []adjTuple
-	stmt.PosTm = -1
-	for i, col := range stmt.Scheme.Keys {
-		switch col.Type {
-		case Timestamp:
-			stmt.PosTm = i
-			break
-		}
-	}
-	if stmt.PosTm == -1 {
-		return
-	}
 	for i, funcName := range stmt.Funcs {
 		if funcName == nil {
 			continue
@@ -796,6 +784,15 @@ func getAdjTuples(stmt *selectStmt) {
 		}
 	}
 	stmt.Adjs = adjs
+	if adjs != nil {
+		if stmt.Scheme.Keys[0].Type != Int {
+			err = errors.New("The first key of the table must be int for applying adj")
+		}
+		if stmt.Scheme.Keys[len(stmt.Scheme.Keys)-1].Type != Timestamp {
+			err = errors.New("The last key of the table must be timestamp for applying adj")
+		}
+	}
+	return
 }
 
 func applyFunc(stmt *selectStmt, recs []([2]tuple.Tuple)) {
@@ -810,9 +807,12 @@ func applyFuncOne(stmt *selectStmt, value tuple.Tuple) {
 	}
 }
 
-func (self *adjCacheS) get(dbName string, sec int) (ret []adjValue) {
+var adjSelect, _ = Parse("select * from \"adj\" where sec=?")
+
+func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret []adjValue) {
 	self.mut.Lock()
-	if values, ok := self.values[dbName]; ok {
+	values, ok := self.values[dbName]
+	if ok {
 		if ret, ok = values[sec]; ok {
 			return
 		}
@@ -820,6 +820,55 @@ func (self *adjCacheS) get(dbName string, sec int) (ret []adjValue) {
 		values = make(map[int][]adjValue)
 		self.values[dbName] = values
 	}
+	self.mut.Unlock()
+	stmt, err := Resolve(db, dbName, adjSelect)
+	if err == nil {
+		tmp, err2 := ExecuteStmt(db, stmt, []interface{}{sec})
+		if err2 == nil {
+			for _, row := range tmp {
+				if len(row) != 4 {
+					break
+				}
+				if _, ok1 := row[0].(int); !ok1 {
+					break
+				}
+				tmTuple, ok2 := row[1].(tuple.Tuple)
+				if !ok2 {
+					break
+				}
+				if len(tmTuple) != 2 {
+					break
+				}
+				tm, ok2_1 := getInt(tmTuple[0])
+				if !ok2_1 {
+					break
+				}
+				px, ok3 := row[2].(float64)
+				if !ok3 {
+					break
+				}
+				vol, ok4 := row[3].(float64)
+				if !ok4 {
+					break
+				}
+				if px == 0. {
+					px = 1.
+				}
+				if vol == 0. {
+					vol = 1.
+				}
+				ret = append(ret, adjValue{tm, px, vol})
+			}
+		}
+		if len(ret) > 1 {
+			for i := len(ret) - 2; i >= 0; i -= 1 {
+				ret[i].Px *= ret[i+1].Px
+				ret[i].Vol *= ret[i+1].Vol
+			}
+		}
+	}
+	self.mut.Lock()
+	values[sec] = ret
 	self.mut.Unlock()
 	return
 }
