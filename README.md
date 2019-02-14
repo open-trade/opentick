@@ -110,3 +110,7 @@ for (auto i = 0; i < 1000; ++i) {
 }
 conn->BatchInsert(kInsert, argss);
 ```
+
+* **Price Adjustments**
+
+Please checkout [adj_test.go](https://github.com/opentradesolutions/opentick/blob/master/adj_test.go)
