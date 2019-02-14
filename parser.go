@@ -10,7 +10,7 @@ var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
 		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
 		`|(?P<Func>(?i)\b(ADJ_PX|ADJ_VOL|ADJ)\b)` +
-		`|(?P<Ident>[a-zA-Z][a-zA-Z0-9_]*)` +
+		`|(?P<Ident>[_a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
 		`|(?P<String>'[^']*'|"[^"]*")` +
 		`|(?P<Operator><=|>=|[-+*/%,.()=<>?])`,
@@ -88,7 +88,7 @@ type AstTypeDef struct {
 
 type AstInsert struct {
 	Table  *AstTableName `"INTO" @@`
-	Cols   []string      `"(" @Ident {"," @Ident} ")"`
+	Cols   []string      `["(" @Ident {"," @Ident} ")"]`
 	Values []AstValue    `"VALUES" "(" @@ {"," @@} ")"`
 }
 

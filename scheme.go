@@ -227,7 +227,7 @@ func decodeTableScheme(bytes []byte) *TableScheme {
 
 func CreateAdj(db fdb.Transactor, dbName string) (err error) {
 	stmt, err1 := Parse(`
-	create table "adj"(
+	create table _adj_(
 		sec int,
   	tm timestamp,
 		px double,

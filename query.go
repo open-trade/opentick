@@ -96,9 +96,6 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 					return
 				}
 			}
-			if dbName == "adj" {
-				return nil, errors.New("adj is reserved")
-			}
 			err = CreateTable(db, dbName, ast.Create.Table)
 		}
 	} else if ast.Drop != nil {
@@ -443,6 +440,11 @@ func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt inser
 	if err != nil {
 		return
 	}
+	if ast.Cols == nil {
+		for _, col := range stmt.Scheme.Cols {
+			ast.Cols = append(ast.Cols, col.Name)
+		}
+	}
 	if len(ast.Cols) != len(ast.Values) {
 		err = errors.New("Unmatched column names/values")
 		return
@@ -627,8 +629,25 @@ func getInt(v interface{}) (ret int64, ok bool) {
 	if v1, ok1 := v.(int64); ok1 {
 		return v1, true
 	}
+	if v1, ok1 := v.(int16); ok1 {
+		return int64(v1), true
+	}
+	if v1, ok1 := v.(int8); ok1 {
+		return int64(v1), true
+	}
 	return
 }
+
+func getFloat(v interface{}) (ret float64, ok bool) {
+	if v1, ok1 := v.(float64); ok1 {
+		return v1, true
+	}
+	if v1, ok1 := v.(float32); ok1 {
+		return float64(v1), true
+	}
+	return
+}
+
 func validateValue(col *TableColDef, v interface{}) (ret interface{}, err error) {
 	switch col.Type {
 	case TinyInt, SmallInt, Int, BigInt:
@@ -807,7 +826,7 @@ func applyFuncOne(stmt *selectStmt, value tuple.Tuple) {
 	}
 }
 
-var adjSelect, _ = Parse("select * from \"adj\" where sec=?")
+var adjSelect, _ = Parse("select * from _adj_ where sec=?")
 
 func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret []adjValue) {
 	self.mut.Lock()
@@ -829,7 +848,7 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret []adj
 				if len(row) != 4 {
 					break
 				}
-				if _, ok1 := row[0].(int); !ok1 {
+				if _, ok1 := getInt(row[0]); !ok1 {
 					break
 				}
 				tmTuple, ok2 := row[1].(tuple.Tuple)
@@ -843,11 +862,11 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret []adj
 				if !ok2_1 {
 					break
 				}
-				px, ok3 := row[2].(float64)
+				px, ok3 := getFloat(row[2])
 				if !ok3 {
 					break
 				}
-				vol, ok4 := row[3].(float64)
+				vol, ok4 := getFloat(row[3])
 				if !ok4 {
 					break
 				}
