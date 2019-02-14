@@ -46,5 +46,13 @@ func Test_AdjCache(t *testing.T) {
 	assert.Equal(t, "[[[2 0] 0.1 0.1 10]]", fmt.Sprint(ret))
 	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1 and b=0", nil)
 	assert.Equal(t, "[[[0 0] 0.025 0.025 40]]", fmt.Sprint(ret))
+	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1", nil)
+	assert.Equal(t, "[[[0 0] 0.025 0.025 40] [[2 0] 0.1 0.1 10] [[3 0] 0.2 0.2 5] [[4 0] 0.2 0.2 5] [[5 0] 1 1 1] [[99 0] 1.5 1.5 1.5] [[100 0] 1 1 1]]", fmt.Sprint(ret))
+	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1 limit -10", nil)
+	assert.Equal(t, "[[[100 0] 1 1 1] [[99 0] 1.5 1.5 1.5] [[5 0] 1 1 1] [[4 0] 0.2 0.2 5] [[3 0] 0.2 0.2 5] [[2 0] 0.1 0.1 10] [[0 0] 0.025 0.025 40]]", fmt.Sprint(ret))
+	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1 limit -1", nil)
+	assert.Equal(t, "[[[100 0] 1 1 1]]", fmt.Sprint(ret))
+	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1 limit 1", nil)
+	assert.Equal(t, "[[[0 0] 0.025 0.025 40]]", fmt.Sprint(ret))
 	Execute(db, "", "drop table test.test", nil)
 }

@@ -120,6 +120,57 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret adjVa
 func applyFunc(db fdb.Transactor, stmt *selectStmt, recs []([2]tuple.Tuple)) {
 	adjs := stmt.Adjs
 	if adjs != nil {
+		var lastSec int64
+		var lastTm int64
+		var adjs adjValues
+		var iAdj int
+		n := len(recs)
+		for i := 0; i < n; i += 1 {
+			j := i
+			if stmt.Reverse {
+				j = n - i - 1
+			}
+			rec := recs[j]
+			key := rec[0]
+			value := rec[1]
+			sec, _ := getInt(key[0])
+			iTm := len(key) - 1
+			tm, _ := getInt(key[iTm].(tuple.Tuple)[0])
+			reinit := i == 0 || sec != lastSec || tm < lastTm
+			lastSec = sec
+			lastTm = tm
+			if reinit {
+				adjs = adjCache.get(db, stmt.Scheme.DbName, int(sec))
+				if len(adjs) == 0 {
+					iAdj = 0
+				} else {
+					iAdj = adjs.bisectRight(tm)
+				}
+			} else {
+				for iAdj < len(adjs) {
+					if adjs[iAdj].Tm <= tm {
+						iAdj += 1
+					} else {
+						break
+					}
+				}
+			}
+			if iAdj == len(adjs) {
+				continue
+			}
+			adj := adjs[iAdj]
+			for _, col := range stmt.Adjs {
+				if col.Pos < len(value) {
+					if v, ok := getFloat(value[col.Pos]); ok {
+						if col.Adj == 1 {
+							value[col.Pos] = v * adj.Px
+						} else if col.Adj == 2 {
+							value[col.Pos] = v * adj.Vol
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
