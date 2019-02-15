@@ -339,13 +339,15 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 	}
 	used := make([]bool, len(scheme.Cols))
 	stmt.Cols = make([]*TableColDef, len(ast.Selected.Cols))
-	stmt.Funcs = make([]*string, len(ast.Selected.Cols))
+	stmt.Funcs = make([]*selectFunc, len(ast.Selected.Cols))
 	for j, col := range ast.Selected.Cols {
 		colName := col.Name
 		var funcName *string
+		var params []AstValue
 		if colName == nil {
 			colName = col.Func.Col
 			funcName = col.Func.Name
+			params = col.Func.Params
 		}
 		col, ok := scheme.NameMap[*colName]
 		if !ok {
@@ -371,8 +373,14 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 				}
 				funcName = &tmp
 			}
+			if tmp == "adj_vol" || tmp == "adj_px" {
+				if params != nil && (len(params) > 1 || params[0].Boolean == nil) {
+					err = errors.New("adj only accept one optional bool params")
+					return
+				}
+			}
+			stmt.Funcs[j] = &selectFunc{*funcName, params}
 		}
-		stmt.Funcs[j] = funcName
 	}
 	err = getAdjTuples(&stmt)
 	return
@@ -385,15 +393,21 @@ type whereStmt interface {
 }
 
 type adjTuple struct {
-	Pos int
-	Adj int // 1: px, 2: vol
+	Pos      int
+	Adj      int // 1: px, 2: vol
+	Backward bool
+}
+
+type selectFunc struct {
+	Name   string
+	Params []AstValue
 }
 
 type selectStmt struct {
 	Scheme          *TableScheme
 	Conds           []condition    // <= len(Scheme.Keys)
 	Cols            []*TableColDef // nil or len(ast.Selected.Cols)
-	Funcs           []*string
+	Funcs           []*selectFunc
 	NumPlaceholders int
 	Limit           int
 	Reverse         bool
@@ -764,12 +778,14 @@ func validateConditionArgs(scheme *TableScheme, origConds []condition, args []in
 
 func getAdjTuples(stmt *selectStmt) (err error) {
 	var adjs []adjTuple
-	for i, funcName := range stmt.Funcs {
-		if funcName == nil {
+	nbackward := 0
+	nforward := 0
+	for i, sfunc := range stmt.Funcs {
+		if sfunc == nil {
 			continue
 		}
 		j := 0
-		switch *funcName {
+		switch sfunc.Name {
 		case "adj_px":
 			j = 1
 		case "adj_vol":
@@ -777,10 +793,17 @@ func getAdjTuples(stmt *selectStmt) (err error) {
 		default:
 			continue
 		}
+		var backward bool
+		if sfunc.Params != nil && *sfunc.Params[0].Boolean {
+			backward = true
+			nbackward += 1
+		} else {
+			nforward += 1
+		}
 		stmt.Funcs[i] = nil
 		col := stmt.Cols[i]
 		if !col.IsKey {
-			adjs = append(adjs, adjTuple{int(col.Pos), j})
+			adjs = append(adjs, adjTuple{int(col.Pos), j, backward})
 		}
 	}
 	stmt.Adjs = adjs
@@ -790,6 +813,9 @@ func getAdjTuples(stmt *selectStmt) (err error) {
 		}
 		if stmt.Scheme.Keys[len(stmt.Scheme.Keys)-1].Type != Timestamp {
 			err = errors.New("The last key of the table must be timestamp for applying adj")
+		}
+		if nbackward > 0 && nforward > 0 {
+			err = errors.New("Mixed backward and forward adj not allowed")
 		}
 	}
 	return

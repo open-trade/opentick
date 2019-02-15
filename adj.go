@@ -7,9 +7,26 @@ import (
 )
 
 type adjValue struct {
-	Tm  int64
-	Px  float64
-	Vol float64
+	Tm   int64
+	Px   float64
+	Vol  float64
+	PxB  float64
+	VolB float64
+}
+
+func (adj adjValue) get(b bool, t int) float64 {
+	if t == 1 {
+		if b {
+			return adj.PxB
+		}
+		return adj.Px
+	} else if t == 2 {
+		if b {
+			return adj.VolB
+		}
+		return adj.Vol
+	}
+	return 1.
 }
 
 type adjValues []adjValue
@@ -101,13 +118,22 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret adjVa
 				if vol == 0. {
 					vol = 1.
 				}
-				ret = append(ret, adjValue{tm, px, vol})
+				ret = append(ret, adjValue{tm, px, vol, px, vol})
 			}
 		}
-		if len(ret) > 1 {
-			for i := len(ret) - 2; i >= 0; i -= 1 {
+		n := len(ret)
+		if n > 1 {
+			for i := n - 2; i >= 0; i -= 1 {
 				ret[i].Px *= ret[i+1].Px
 				ret[i].Vol *= ret[i+1].Vol
+			}
+			for i := 0; i < n; i += 1 {
+				ret[i].PxB = 1. / ret[i].PxB
+				ret[i].VolB = 1. / ret[i].VolB
+				if i > 0 {
+					ret[i].PxB *= ret[i-1].PxB
+					ret[i].VolB *= ret[i-1].VolB
+				}
 			}
 		}
 	}
@@ -120,6 +146,7 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret adjVa
 func applyFunc(db fdb.Transactor, stmt *selectStmt, recs []([2]tuple.Tuple)) {
 	adjs := stmt.Adjs
 	if adjs != nil {
+		b := adjs[0].Backward
 		var lastSec int64
 		var lastTm int64
 		var adjs adjValues
@@ -141,12 +168,14 @@ func applyFunc(db fdb.Transactor, stmt *selectStmt, recs []([2]tuple.Tuple)) {
 			lastTm = tm
 			if reinit {
 				adjs = adjCache.get(db, stmt.Scheme.DbName, int(sec))
-				if len(adjs) == 0 {
-					iAdj = 0
-				} else {
+				if len(adjs) > 0 {
 					iAdj = adjs.bisectRight(tm)
 				}
-			} else {
+			}
+			if len(adjs) == 0 {
+				continue
+			}
+			if !reinit {
 				for iAdj < len(adjs) {
 					if adjs[iAdj].Tm <= tm {
 						iAdj += 1
@@ -155,18 +184,20 @@ func applyFunc(db fdb.Transactor, stmt *selectStmt, recs []([2]tuple.Tuple)) {
 					}
 				}
 			}
-			if iAdj == len(adjs) {
+			k := iAdj
+			if b {
+				if k == 0 {
+					continue
+				}
+				k -= 1
+			} else if k == len(adjs) {
 				continue
 			}
-			adj := adjs[iAdj]
+			adj := adjs[k]
 			for _, col := range stmt.Adjs {
 				if col.Pos < len(value) {
 					if v, ok := getFloat(value[col.Pos]); ok {
-						if col.Adj == 1 {
-							value[col.Pos] = v * adj.Px
-						} else if col.Adj == 2 {
-							value[col.Pos] = v * adj.Vol
-						}
+						value[col.Pos] = v * adj.get(b, col.Adj)
 					}
 				}
 			}
@@ -189,18 +220,22 @@ func applyAdjOne(db fdb.Transactor, stmt *selectStmt, sec int, tm int64, value t
 		return
 	}
 	i := adjs.bisectRight(tm)
-	if i == len(adjs) {
-		return
+	b := stmt.Adjs[0].Backward
+	if b {
+		if i == 0 {
+			return
+		}
+		i -= 1
+	} else {
+		if i == len(adjs) {
+			return
+		}
 	}
 	adj := adjs[i]
 	for _, col := range stmt.Adjs {
 		if col.Pos < len(value) {
 			if v, ok := getFloat(value[col.Pos]); ok {
-				if col.Adj == 1 {
-					value[col.Pos] = v * adj.Px
-				} else if col.Adj == 2 {
-					value[col.Pos] = v * adj.Vol
-				}
+				value[col.Pos] = v * adj.get(b, col.Adj)
 			}
 		}
 	}

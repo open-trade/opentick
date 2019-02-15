@@ -129,8 +129,9 @@ type AstSelectCol struct {
 }
 
 type AstSelectFunc struct {
-	Name *string `@Func "("`
-	Col  *string `@Ident ")"`
+	Name   *string    `@Func "("`
+	Col    *string    `@Ident`
+	Params []AstValue `{"," @@} ")"`
 }
 
 type AstExpression struct {
