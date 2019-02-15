@@ -71,5 +71,7 @@ func Test_AdjCache(t *testing.T) {
 	ret, _ = Execute(db, "test", "select b, adj(c, true), adj(d, true), adj(vol, true) from bar where a=1 limit -10", nil)
 	assert.Equal(t, "[[[100 0] 40 40 0.025] [[99 0] 60 60 0.037500000000000006] [[5 0] 40 40 0.025] [[4 0] 8 8 0.125] [[3 0] 8 8 0.125] [[2 0] 4 4 0.25] [[0 0] 1 1 1]]", fmt.Sprint(ret))
 	ret, _ = Execute(db, "test", "select b, adj(c), adj(d), adj(vol) from bar where a=1 limit -1", nil)
+	ret, err = Execute(db, "test", "select b, adj(c), adj(d, true), adj(vol, true) from bar where a=1", nil)
+	assert.NotEqual(t, nil, err)
 	Execute(db, "", "drop table test.test", nil)
 }
