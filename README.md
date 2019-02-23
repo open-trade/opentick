@@ -122,7 +122,7 @@ conn->BatchInsert(kInsert, argss);
 
 ```C++
 auto res = conn->Execute(
-        "select tm, adj(open), adj(high), adj(low), adj(low), adj(close), adj(vol) from test where sec=1 and interval=? limit -2", Args{1});
+        "select tm, adj(open), adj(high), adj(low), adj(close), adj(vol) from test where sec=1 and interval=? limit -2", Args{1});
 ```
 
 For more details, please checkout [adj_test.go](https://github.com/opentradesolutions/opentick/blob/master/adj_test.go)
