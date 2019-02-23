@@ -2,7 +2,14 @@
 
 ![OpenTrade Logo](https://github.com/opentradesolutions/opentrade/blob/master/web/img/ot.png)
 
-OpenTick is a fast tick database for financial timeseries data, built on [FoundationDB](https://www.foundationdb.org/) with simplified SQL layer. It has has built-in price adjustment support. It provides Python, C++ and Go SDK, all support both sync and async query. SQL statements are prepared automatically for you.
+OpenTick is a fast tick database for financial timeseries data, built on [FoundationDB](https://www.foundationdb.org/) with simplified SQL layer. 
+
+# Features:
+* Built-in price adjustment support
+* Nanosecond support
+* Python, C++ and Go SDK
+* Both sync and async query
+* Implicit SQL statement prepare
 
 # Installation on Ubuntu
 
