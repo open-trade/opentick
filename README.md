@@ -99,7 +99,7 @@ auto res = conn->Execute(
 * **Insert**
 ```C++
 static const std::string kInsert =
-    "insert into test(sec, interval, tm, open, high, low, close, v, vwap) "
+    "insert into test(sec, interval, tm, open, high, low, close, vol, vwap) "
     "values(?, ?, ?, ?, ?, ?, ?, ?, ?)";
 std::vector<Future> futs;
 for (auto i = 0; i < 1000; ++i) {
@@ -120,4 +120,9 @@ conn->BatchInsert(kInsert, argss);
 
 * **Price Adjustments**
 
-Please checkout [adj_test.go](https://github.com/opentradesolutions/opentick/blob/master/adj_test.go)
+```C++
+auto res = conn->Execute(
+        "select tm, adj(open), adj(high), adj(low), adj(low), adj(close), adj(vol) from test where sec=1 and interval=? limit -2", Args{1});
+```
+
+For more details, please checkout [adj_test.go](https://github.com/opentradesolutions/opentick/blob/master/adj_test.go)
