@@ -18,7 +18,7 @@ try:
   res = conn.execute('create database if not exists test')
   conn.use('test')
   res = conn.execute(
-      'create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double, vwap double, primary key(sec, interval, tm))'
+      'create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, vol double, vwap double, primary key(sec, interval, tm))'
   )
   res = conn.execute('delete from test where sec=?', 1)
   log('records deleted')
@@ -34,7 +34,7 @@ try:
         ms = j * n2 + k
         tm2 = tm + datetime.timedelta(microseconds=ms)
         futs.append(conn.execute_async(
-          'insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'insert into test(sec, interval, tm, open, high, low, close, vol, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
           1, i, tm2, 2.2, 2.4, 2.1, 2.3, 1000000, 2.25))
     now2 = datetime.datetime.now()
     log(str(now2 - now), 'async done')
@@ -56,7 +56,7 @@ try:
       # the batch size is limited by foundationdb transaction size
       # https://apple.github.io/foundationdb/known-limitations.html
       res = conn.batch_insert_async(
-          'insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'insert into test(sec, interval, tm, open, high, low, close, vol, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)',
           args_array)
       futs.append(res)
     now2 = datetime.datetime.now()

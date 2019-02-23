@@ -14,7 +14,7 @@ func main() {
 	res, err := conn.Execute("create database if not exists test")
 	assertEqual(nil, err)
 	conn.Use("test")
-	res, err = conn.Execute("create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, v double, vwap double, primary key(sec, interval, tm))")
+	res, err = conn.Execute("create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, vol double, vwap double, primary key(sec, interval, tm))")
 	assertEqual(nil, err)
 	res, err = conn.Execute("delete from test where sec=?", 1)
 	assertEqual(nil, err)
@@ -31,7 +31,7 @@ func main() {
 				ms := j*n2 + k
 				tm2 = tm.Add(time.Duration(ms) * time.Microsecond)
 				fut, err := conn.ExecuteAsync(
-					"insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					"insert into test(sec, interval, tm, open, high, low, close, vol, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
 					1, i, tm2, 2.2, 2.4, 2.1, 2.3, 1000000, 2.25)
 				assertEqual(nil, err)
 				futs = append(futs, fut)
@@ -58,7 +58,7 @@ func main() {
 			// the batch size is limited by foundationdb transaction size
 			// https://apple.github.io/foundationdb/known-limitations.html
 			fut, err := conn.BatchInsertAsync(
-				"insert into test(sec, interval, tm, open, high, low, close, v, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				"insert into test(sec, interval, tm, open, high, low, close, vol, vwap) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				args_array)
 			assertEqual(nil, err)
 			futs = append(futs, fut)

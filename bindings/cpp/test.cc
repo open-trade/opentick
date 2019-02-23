@@ -20,7 +20,7 @@ using namespace std::chrono;
   } while (0)
 
 static const std::string kInsert =
-    "insert into test(sec, interval, tm, open, high, low, close, v, vwap) "
+    "insert into test(sec, interval, tm, open, high, low, close, vol, vwap) "
     "values(?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 int main() {
@@ -30,7 +30,7 @@ int main() {
   conn->Use("test");
   auto res = conn->Execute(R"(
       create table if not exists test(sec int, interval int, tm timestamp, 
-      open double, high double, low double, close double, v double, vwap 
+      open double, high double, low double, close double, vol double, vwap 
       double, primary key(sec, interval, tm))
       )");
   res = conn->Execute("delete from test where sec=?", Args{1});
