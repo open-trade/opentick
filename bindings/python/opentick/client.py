@@ -127,7 +127,9 @@ class Connection(threading.Thread):
     for i in xrange(len(args)):
       arg = args[i]
       if isinstance(arg, datetime.datetime):
-        s = (localize(arg) - utc_start).total_seconds()
+        if arg.tzinfo: arg = arg.astimezone(pytz.utc)
+        else: arg = localize(arg)
+        s = (arg - utc_start).total_seconds()
         args[i] = (int(s), int(s * 1000000) % 1000000 * 1000)
 
   def __prepare(self, sql):
