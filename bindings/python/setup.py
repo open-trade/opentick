@@ -8,11 +8,7 @@ try:
 except:
   pass
 
-try:
-  from setuptools import setup, find_packages
-except ImportError:
-  from distutils.core import setup
-
+from setuptools import setup, find_packages
 import os
 import re
 
