@@ -1,0 +1,21 @@
+syntax = "proto3";
+package ot;
+
+message Message {
+  repeated Fields values = 1;
+  string cmd = 2;
+  string text = 3;
+  int64 prepared = 4;
+}
+
+message Fields {
+  repeated Field values = 1;
+}
+
+message Field {
+  oneof union {
+    int64 n = 1;
+    double d = 2;
+    string s = 3;
+  }
+}
