@@ -11,7 +11,7 @@ value = [1, 1.2, 1.3, 1.4]
 values = []
 for x in range(10):
   values.append(value)
-msg = {'action': 'test', 'id': 1, 'values': values}
+msg = {'0': 'test', '1': 1, '2': values}
 now = time.time()
 for x in range(100000):
   body = BSON.encode(msg)
