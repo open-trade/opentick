@@ -77,19 +77,19 @@ class Connection(threading.Thread):
     self.__sock.close()
     self.join()
 
-  def execute(self, sql, *args):
+  def execute(self, sql, args=[]):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql, *args).get()
-    return self.execute_async(sql, *args).get()
+          return self.__execute_ranges_async(sql, args).get()
+    return self.execute_async(sql, args).get()
 
-  def execute_async(self, sql, *args):
+  def execute_async(self, sql, args=[]):
     prepared = None
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql, *args)
+          return self.__execute_ranges_async(sql, args)
       args = list(args)
       self.__convert_timestamp(args)
       prepared = self.__prepare(sql)
@@ -115,12 +115,12 @@ class Connection(threading.Thread):
     self.__send(cmd)
     return Future(ticker, self)
 
-  def __execute_ranges_async(self, sql, *args):
+  def __execute_ranges_async(self, sql, args):
     ranges = args[-1]
     futs = []
     for r in ranges:
       args2 = list(args[:-1]) + r
-      futs.append(self.execute_async(sql, *args2))
+      futs.append(self.execute_async(sql, args2))
     return Futures(futs)
 
   def __convert_timestamp(self, args):
@@ -189,7 +189,7 @@ class Connection(threading.Thread):
           return
         n -= len(got)
         body += got
-      if n0 == 1 and body == six.b('H'): # heartbeat
+      if n0 == 1 and body == six.b('H'):  # heartbeat
         self.__send()
         continue
       msg = BSON(body).decode()
@@ -237,7 +237,7 @@ class Future(object):
       del self.__conn._store[self.__ticker]
     return out
 
-  def get(self, timeout=None): # timeout in seconds
+  def get(self, timeout=None):  # timeout in seconds
     msg = None
     err = None
     self.__conn._cond.acquire()
@@ -249,7 +249,9 @@ class Future(object):
         self.__conn._cond.wait()
       else:
         break
-      if (timeout or 0) > 0 and datetime.datetime.now() - tm >= datetime.timedelta(seconds=timeout):
+      if (timeout or
+          0) > 0 and datetime.datetime.now() - tm >= datetime.timedelta(
+              seconds=timeout):
         self.__conn._cond.release()
         raise Error('Timeout')
     self.__conn._cond.release()
@@ -269,7 +271,9 @@ class Future(object):
     if err:
       raise err
 
+
 class Futures(object):
+
   def __init__(self, futs):
     self.__futs = futs
 
