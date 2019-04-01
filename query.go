@@ -89,6 +89,8 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 			}
 			err = DropTable(db, dbName, ast.Drop.Table.TableName())
 		}
+	} else if ast.AlterTable != nil {
+		err = AlterTable(db, dbName, ast.AlterTable)
 	} else {
 		stmt, err1 := Resolve(db, dbName, ast)
 		if err1 != nil {
@@ -489,6 +491,15 @@ func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt delet
 	}
 	stmt.Conds, stmt.NumPlaceholders, err = resolveWhere(stmt.Scheme, ast.Where)
 	return
+}
+
+func AlterTable(db fdb.Transactor, dbName string, ast *AstAlterTable) (err error) {
+	scheme, err2 := getTableScheme(db, dbName, ast.Table)
+	if err2 != nil {
+		err = err2
+		return
+	}
+	return RenameTableField(db, scheme, *ast.AlterTableType.Rename.A, *ast.AlterTableType.Rename.B)
 }
 
 type deleteStmt struct {

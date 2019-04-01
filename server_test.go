@@ -87,9 +87,18 @@ func Test_Server(t *testing.T) {
 	assert.Equal(t, "Invalid float64 value (2) for \"tm\" of Timestamp", err.Error())
 	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
 	assert.Equal(t, 0, len(res))
+	_, err = conn.Execute("alter table test rename tm to time")
+	assert.Equal(t, nil, err)
+	// scheme is cached, so tm still work even it renamed
+	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 0, len(res))
 	argsArray = [][]interface{}{[]interface{}{tm, 5}, []interface{}{tm, 3}}
 	err = conn.BatchInsert("insert into test(sec, interval, tm, open) values(1, 2, ?, ?)", argsArray)
 	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
+	assert.Equal(t, float64(3), res[0][0])
+	res, err = conn.Execute("select open from test where sec=? and interval=? and time=?", 1, 2, tm)
+	assert.Equal(t, nil, err)
 	assert.Equal(t, float64(3), res[0][0])
 	conn.Execute("drop table test")
 }

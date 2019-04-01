@@ -8,7 +8,7 @@ import (
 
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
-		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
+		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|TO|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
 		`|(?P<Func>(?i)\b(ADJ_PX|ADJ_VOL|ADJ)\b)` +
 		`|(?P<Ident>[_a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
@@ -47,11 +47,12 @@ func (self *AstNumber) Capture(values []string) error {
 }
 
 type Ast struct {
-	Select *AstSelect `"SELECT" @@`
-	Insert *AstInsert `| "INSERT" @@`
-	Create *AstCreate `| "CREATE" @@`
-	Drop   *AstDrop   `| "DROP" @@`
-	Delete *AstDelete `| "DELETE" @@`
+	Select     *AstSelect     `"SELECT" @@`
+	Insert     *AstInsert     `| "INSERT" @@`
+	Create     *AstCreate     `| "CREATE" @@`
+	Drop       *AstDrop       `| "DROP" @@`
+	Delete     *AstDelete     `| "DELETE" @@`
+	AlterTable *AstAlterTable `| "ALTER" "TABLE" @@`
 }
 
 type AstDrop struct {
@@ -116,6 +117,20 @@ type AstSelect struct {
 	Table    *AstTableName        `"FROM" @@`
 	Where    *AstExpression       `["WHERE" @@]`
 	Limit    *int64               `["LIMIT" @Number]`
+}
+
+type AstAlterTable struct {
+	Table          *AstTableName      `@@`
+	AlterTableType *AstAlterTableType `@@`
+}
+
+type AstAlterTableType struct {
+	Rename *AstRename `"RENAME" @@`
+}
+
+type AstRename struct {
+	A *string `@Ident "TO"`
+	B *string `@Ident`
 }
 
 type AstSelectExpression struct {

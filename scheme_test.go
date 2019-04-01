@@ -164,6 +164,12 @@ func Test_CreateTable(t *testing.T) {
 	dir2, _ := directory.Open(db, []string{"db", "test", "test", "scheme"}, nil)
 	assert.Equal(t, len(dir.Bytes()), len(dir2.Bytes()))
 	assert.Equal(t, string(tbl.Dir.Bytes()), string(dir.Bytes()))
+	_, err = Execute(db, "", "alter table test.test rename tm to time", nil)
+	assert.Equal(t, nil, err)
+	_, err = Execute(db, "", "alter table test.test rename tm to time", nil)
+	assert.Equal(t, "Column tm does not exist", err.Error())
+	_, err = Execute(db, "", "alter table test.test rename time to tm", nil)
+	assert.Equal(t, nil, err)
 	_, err = Execute(db, "", "drop table test.test", nil)
 	assert.Equal(t, nil, err)
 }
