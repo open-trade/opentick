@@ -191,8 +191,14 @@ inline void Connection::Close() {
     } catch (...) {
     }
     self->outbox_.clear();
-    self->prepared_.clear();
-    self->store_.clear();
+    {
+      std::lock_guard<std::mutex> lock(self->m_);
+      self->prepared_.clear();
+    }
+    {
+      std::lock_guard<std::mutex> lk(self->m_cv_);
+      self->store_.clear();
+    }
   });
 }
 
@@ -354,10 +360,12 @@ inline Value FutureImpl::Get_(double timeout) {
   while (true) {
     auto it1 = conn->store_.find(ticker);
     if (it1 != conn->store_.end()) {
-      if (auto ptr = std::get_if<ValueScalar>(&it1->second)) {
+      auto tmp = it1->second;
+      conn->store_.erase(it1);
+      if (auto ptr = std::get_if<ValueScalar>(&tmp)) {
         if (auto ptr2 = std::get_if<std::string>(ptr)) throw Exception(*ptr2);
       }
-      return it1->second;
+      return tmp;
     }
     auto it2 = conn->store_.find(-1);
     if (it2 != conn->store_.end()) {
