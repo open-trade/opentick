@@ -24,8 +24,15 @@ static const std::string kInsert =
     "values(?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 int main() {
-  auto conn = Connect("127.0.0.1", 1116);
-  LOG("connected");
+  auto conn = Connection::Create("127.0.0.1", 1116);
+  LOG("connecting");
+  auto err = conn->Connect();
+  if (err.empty()) {
+    LOG("connected");
+  } else {
+    LOG(err);
+    return -1;
+  }
   conn->Execute("create database if not exists test");
   conn->Use("test");
   auto res = conn->Execute(R"(

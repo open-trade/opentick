@@ -40,7 +40,8 @@ typedef std::vector<Args> Argss;
 class Connection : public std::enable_shared_from_this<Connection> {
  public:
   typedef std::shared_ptr<Connection> Ptr;
-  bool IsConnected() const;
+  std::string Connect();
+  bool IsConnected() const { return connected_; }
   void Use(const std::string& dbName);
   Future ExecuteAsync(const std::string& sql, const Args& args = Args{});
   ResultSet Execute(const std::string& sql, const Args& args = Args{});
@@ -49,8 +50,15 @@ class Connection : public std::enable_shared_from_this<Connection> {
   int Prepare(const std::string& sql);
   void Close();
 
+  static inline Connection::Ptr Create(const std::string& addr, int port,
+                                       const std::string& db_name = "",
+                                       int timeout = 15) {
+    return Connection::Ptr(new Connection(addr, port, db_name, timeout));
+  }
+
  protected:
-  Connection(const std::string& addr, int port);
+  Connection(const std::string& addr, int port, const std::string& dbname,
+             int timeout);
   void ReadHead();
   void ReadBody(unsigned len);
   template <typename T>
@@ -59,6 +67,11 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void Notify(int, const Value&);
 
  private:
+  bool connected_ = false;
+  std::string ip_;
+  int port_ = 0;
+  std::string default_use_;
+  int default_timeout_ = 0;
   std::vector<std::uint8_t> msg_in_buf_;
   std::vector<std::uint8_t> msg_out_buf_;
   std::vector<std::uint8_t> outbox_;
@@ -73,18 +86,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
   std::map<std::string, int> prepared_;
   std::map<int, Value> store_;
   friend class FutureImpl;
-  friend Ptr Connect(const std::string&, int, const std::string&);
 };
-
-inline Connection::Ptr Connect(const std::string& addr, int port,
-                               const std::string& db_name = "") {
-  Connection::Ptr conn(new Connection(addr, port));
-  conn->ReadHead();
-  if (db_name.size()) {
-    conn->Use(db_name);
-  }
-  return conn;
-}
 
 class Exception : public std::exception {
  public:
@@ -103,25 +105,53 @@ struct FutureImpl : public AbstractFuture {
   Connection::Ptr conn;
 };
 
-inline Connection::Connection(const std::string& ip, int port)
-    : worker_(io_service_),
+inline Connection::Connection(const std::string& ip, int port,
+                              const std::string& dbname, int timeout)
+    : ip_(ip),
+      port_(port),
+      default_use_(dbname),
+      default_timeout_(timeout),
+      worker_(io_service_),
       socket_(io_service_),
-      thread_([this]() { io_service_.run(); }) {
+      thread_([this]() { io_service_.run(); }) {}
+
+inline std::string Connection::Connect() {
   try {
-    boost::asio::ip::tcp::endpoint end_pt(
-        boost::asio::ip::address::from_string(ip), port);
-    std::cerr << "OpenTick: connecting ..." << std::endl;
-    socket_.connect(end_pt);
+    if (default_timeout_ <= 0) {
+      boost::asio::ip::tcp::endpoint end_pt(
+          boost::asio::ip::address::from_string(ip_), port_);
+      socket_.connect(end_pt);
+    } else {
+      boost::asio::ip::tcp::resolver resolver(io_service_);
+      boost::asio::ip::tcp::resolver::query query(ip_, std::to_string(port_));
+      auto conn_result = boost::asio::async_connect(
+          socket_, resolver.resolve(query), boost::asio::use_future);
+      auto status =
+          conn_result.wait_for(std::chrono::seconds(default_timeout_));
+      if (status == std::future_status::timeout) {
+        socket_.cancel();
+        return "connect timeout";
+      }
+      try {
+        conn_result.get();
+      } catch (const boost::system::system_error& e) {
+        return e.what();
+      }
+    }
     boost::asio::ip::tcp::no_delay option(true);
     socket_.set_option(option);
+    connected_ = true;
+    ReadHead();
+    if (default_use_.size()) Use(default_use_);
   } catch (std::exception& e) {
-    std::cerr << "OpenTick: failed to connect: " << e.what() << std::endl;
+    Close();
+    return e.what();
   }
+  return {};
 }
 
-inline bool Connection::IsConnected() const { return socket_.is_open(); }
-
 inline void Connection::Close() {
+  connected_ = false;
   auto self = shared_from_this();
   io_service_.post([self]() {
     boost::system::error_code ignoredCode;
@@ -131,13 +161,16 @@ inline void Connection::Close() {
       self->socket_.close();
     } catch (...) {
     }
+    self->outbox_.clear();
+    self->prepared_.clear();
+    self->store_.clear();
   });
 }
 
 inline void Connection::Use(const std::string& dbName) {
   auto ticker = ++ticker_counter_;
   Send(json::to_bson(json{{"0", ticker}, {"1", "use"}, {"2", dbName}}));
-  FutureImpl(ticker, shared_from_this()).Get();
+  FutureImpl(ticker, shared_from_this()).Get(default_timeout_);
 }
 
 inline void Connection::ReadHead() {
@@ -168,6 +201,7 @@ inline void Connection::ReadBody(unsigned len) {
       socket_, boost::asio::buffer(msg_in_buf_, len),
       [self, len](const boost::system::error_code& e, size_t) {
         if (e) {
+          self->Close();
           std::cerr << "OpenTick: connection closed" << std::endl;
           self->Notify(-1, e.message());
           return;
@@ -255,6 +289,7 @@ inline void Connection::Write() {
       socket_, boost::asio::buffer(outbox_, outbox_.size()),
       [self](const boost::system::error_code& e, std::size_t) {
         if (e) {
+          self->Close();
           std::cerr << "OpenTick: failed to send message. Error code: "
                     << e.message() << std::endl;
           self->Notify(-1, e.message());
@@ -285,6 +320,7 @@ inline int Connection::Prepare(const std::string& sql) {
 inline Value FutureImpl::Get_(double timeout) {
   std::unique_lock<std::mutex> lk(conn->m_cv_);
   auto start = std::chrono::system_clock::now();
+  timeout *= 1e6;
   while (true) {
     auto it1 = conn->store_.find(ticker);
     if (it1 != conn->store_.end()) {
@@ -300,8 +336,9 @@ inline Value FutureImpl::Get_(double timeout) {
     }
     using namespace std::chrono_literals;
     conn->cv_.wait_for(lk, 1ms);
-    if (timeout > 0 &&
-        (std::chrono::system_clock::now() - start).count() >= timeout) {
+    if (timeout > 0 && std::chrono::duration_cast<std::chrono::microseconds>(
+                           std::chrono::system_clock::now() - start)
+                               .count() >= timeout) {
       throw Exception("Timeout");
     }
   }
@@ -320,7 +357,7 @@ inline void Connection::Notify(int ticker, const Value& value) {
   cv_.notify_all();
 }
 
-void ConvertArgs(const Args& args, json& jargs) {
+inline void ConvertArgs(const Args& args, json& jargs) {
   for (auto& v : args) {
     std::visit(
         [&jargs](auto&& v2) {
