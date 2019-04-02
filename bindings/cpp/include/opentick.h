@@ -65,9 +65,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void ConnectAsync();
   bool IsConnected() const { return 1 == connected_; }
   void Use(const std::string& dbName);
-  Future ExecuteAsync(const std::string& sql, const Args& args = Args{},
-                      Callback callback = Callback{});
-  ResultSet Execute(const std::string& sql, const Args& args = Args{});
+  Future ExecuteAsync(const std::string& sql, const Args& args = {},
+                      Callback callback = {});
+  ResultSet Execute(const std::string& sql, const Args& args = {});
   Future BatchInsertAsync(const std::string& sql, const Argss& argss);
   void BatchInsert(const std::string& sql, const Argss& argss);
   int Prepare(const std::string& sql);
@@ -407,7 +407,7 @@ inline void Connection::Notify(int ticket, const Value& value) {
   if (callback) {
     if (auto ptr = std::get_if<ValueScalar>(&value)) {
       if (auto ptr2 = std::get_if<std::string>(ptr)) {
-        callback(ResultSet{}, *ptr2);
+        callback({}, *ptr2);
       }
     } else if (auto ptr = std::get_if<ResultSet>(&value)) {
       callback(*ptr, "");
@@ -466,9 +466,9 @@ inline Future Connection::ExecuteAsync(const std::string& sql, const Args& args,
           callback = it->second;
           // reset it rather than erase to let Notify handle it for memory leak
           // issue of store_
-          it->second = Callback{};
+          it->second = {};
         }
-        if (callback) callback(ResultSet{}, "timeout");
+        if (callback) callback({}, "timeout");
       });
     }
     return {};
