@@ -164,7 +164,7 @@ inline std::string Connection::Connect() {
     connected_ = 1;
     ReadHead();
     if (default_use_.size()) Use(default_use_);
-    logger_->Error("OpenTick: Connected");
+    logger_->Info("OpenTick: Connected");
   } catch (std::exception& e) {
     Close();
     logger_->Error("OpenTick: Failed to connect: " + std::string(e.what()));
