@@ -127,7 +127,7 @@ func SplitRange(start interface{}, end interface{}, numParts int) (parts RangeAr
 }
 
 type future struct {
-	ticker int
+	ticket int
 	conn   *connection
 }
 
@@ -144,8 +144,8 @@ func (self *future) get(timeout ...float64) (interface{}, error) {
 	}
 	tm := time.Now()
 	for {
-		if tmp, ok := self.conn.store[self.ticker]; ok {
-			delete(self.conn.store, self.ticker)
+		if tmp, ok := self.conn.store[self.ticket]; ok {
+			delete(self.conn.store, self.ticket)
 			data := tmp.(map[string]interface{})
 			res, _ := data["1"]
 			if str, ok := res.(string); ok {
@@ -191,7 +191,7 @@ func (self *future) Get(timeout ...float64) (ret [][]interface{}, err error) {
 
 type connection struct {
 	conn          net.Conn
-	tickerCounter int64
+	ticketCounter int64
 	prepared      sync.Map
 	store         map[int]interface{}
 	mutex         sync.Mutex
@@ -200,14 +200,14 @@ type connection struct {
 }
 
 func (self *connection) Use(dbName string) (err error) {
-	ticker := self.getTicker()
-	cmd := map[string]interface{}{"0": ticker, "1": "use", "2": dbName}
+	ticket := self.getTicket()
+	cmd := map[string]interface{}{"0": ticket, "1": "use", "2": dbName}
 	err = self.send(cmd)
 	if err != nil {
 		self.Close()
 		return
 	}
-	f := future{ticker, self}
+	f := future{ticket, self}
 	_, err = f.get()
 	if err != nil {
 		self.Close()
@@ -243,13 +243,13 @@ func (self *connection) BatchInsertAsync(sql string, argsArray [][]interface{}) 
 	if err != nil {
 		return
 	}
-	ticker := self.getTicker()
-	cmd := map[string]interface{}{"0": ticker, "1": "batch", "2": prepared, "3": argsArray}
+	ticket := self.getTicket()
+	cmd := map[string]interface{}{"0": ticket, "1": "batch", "2": prepared, "3": argsArray}
 	err = self.send(cmd)
 	if err != nil {
 		return
 	}
-	fut = &future{ticker, self}
+	fut = &future{ticket, self}
 	return
 }
 
@@ -257,13 +257,13 @@ func (self *connection) prepare(sql string) (prepared int, err error) {
 	if tmp, ok := self.prepared.Load(sql); ok {
 		prepared = tmp.(int)
 	} else {
-		ticker := self.getTicker()
-		cmd := map[string]interface{}{"0": ticker, "1": "prepare", "2": sql}
+		ticket := self.getTicket()
+		cmd := map[string]interface{}{"0": ticket, "1": "prepare", "2": sql}
 		err = self.send(cmd)
 		if err != nil {
 			return
 		}
-		f := future{ticker, self}
+		f := future{ticket, self}
 		res, err2 := f.get()
 		if err2 != nil {
 			err = err2
@@ -347,8 +347,8 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 			return
 		}
 	}
-	ticker := self.getTicker()
-	cmd = map[string]interface{}{"0": ticker, "1": "run", "2": sql, "3": args}
+	ticket := self.getTicket()
+	cmd = map[string]interface{}{"0": ticket, "1": "run", "2": sql, "3": args}
 	if prepared >= 0 {
 		cmd["2"] = prepared
 	}
@@ -356,12 +356,12 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 	if err != nil {
 		return
 	}
-	ret = &future{ticker, self}
+	ret = &future{ticket, self}
 	return
 }
 
-func (self *connection) getTicker() int {
-	return int(atomic.AddInt64(&self.tickerCounter, 1))
+func (self *connection) getTicket() int {
+	return int(atomic.AddInt64(&self.ticketCounter, 1))
 }
 
 func (self *connection) send(data map[string]interface{}) error {
@@ -390,9 +390,9 @@ func (self *connection) send(data map[string]interface{}) error {
 	return nil
 }
 
-func (self *connection) notify(ticker int, msg interface{}) {
+func (self *connection) notify(ticket int, msg interface{}) {
 	self.mutexCond.Lock()
-	self.store[ticker] = msg
+	self.store[ticket] = msg
 	self.cond.Broadcast()
 	self.mutexCond.Unlock()
 }

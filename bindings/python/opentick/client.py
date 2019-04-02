@@ -51,7 +51,7 @@ class Connection(threading.Thread):
     threading.Thread.__init__(self)
     self.__sock = sock
     self.__prepared = {}
-    self.__ticker_counter = 0
+    self.__ticket_counter = 0
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
     self._store = {}
@@ -60,11 +60,11 @@ class Connection(threading.Thread):
       self.use(db_name)
 
   def use(self, db_name):
-    ticker = self.__get_ticker()
-    cmd = {'0': ticker, '1': 'use', '2': db_name}
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'use', '2': db_name}
     self.__send(cmd)
     try:
-      Future(ticker, self).get()
+      Future(ticket, self).get()
     except Error as e:
       self.close()
       raise e
@@ -93,12 +93,12 @@ class Connection(threading.Thread):
       args = list(args)
       self.__convert_timestamp(args)
       prepared = self.__prepare(sql)
-    ticker = self.__get_ticker()
-    cmd = {'0': ticker, '1': 'run', '2': sql, '3': args}
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'run', '2': sql, '3': args}
     if prepared != None:
       cmd['2'] = prepared
     self.__send(cmd)
-    return Future(ticker, self)
+    return Future(ticket, self)
 
   def batch_insert(self, sql, argsArray):
     fut = self.batch_insert_async(sql, argsArray)
@@ -110,10 +110,10 @@ class Connection(threading.Thread):
     for args in argsArray:
       self.__convert_timestamp(args)
     prepared = self.__prepare(sql)
-    ticker = self.__get_ticker()
-    cmd = {'0': ticker, '1': 'batch', '2': prepared, '3': argsArray}
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'batch', '2': prepared, '3': argsArray}
     self.__send(cmd)
-    return Future(ticker, self)
+    return Future(ticket, self)
 
   def __execute_ranges_async(self, sql, args):
     ranges = args[-1]
@@ -137,19 +137,19 @@ class Connection(threading.Thread):
     prepared = self.__prepared.get(sql)
     self._mutex.release()
     if prepared == None:
-      ticker = self.__get_ticker()
-      cmd = {'0': ticker, '1': 'prepare', '2': sql}
+      ticket = self.__get_ticket()
+      cmd = {'0': ticket, '1': 'prepare', '2': sql}
       self.__send(cmd)
-      n = Future(ticker, self).get()
+      n = Future(ticket, self).get()
       self._mutex.acquire()
       self.__prepared[sql] = n
       prepared = n
       self._mutex.release()
     return prepared
 
-  def __notify(self, ticker, msg):
+  def __notify(self, ticket, msg):
     self._cond.acquire()
-    self._store[ticker] = msg
+    self._store[ticket] = msg
     self._cond.notify_all()
     self._cond.release()
 
@@ -217,24 +217,24 @@ class Connection(threading.Thread):
       n -= n2
     self._mutex.release()
 
-  def __get_ticker(self):
+  def __get_ticket(self):
     self._mutex.acquire()
-    n = self.__ticker_counter
-    self.__ticker_counter += 1
+    n = self.__ticket_counter
+    self.__ticket_counter += 1
     self._mutex.release()
     return n
 
 
 class Future(object):
 
-  def __init__(self, ticker, conn):
-    self.__ticker = ticker
+  def __init__(self, ticket, conn):
+    self.__ticket = ticket
     self.__conn = conn
 
-  def __get_store(self, ticker):
-    out = self.__conn._store.get(ticker)
-    if out != None and ticker != -1:
-      del self.__conn._store[self.__ticker]
+  def __get_store(self, ticket):
+    out = self.__conn._store.get(ticket)
+    if out != None and ticket != -1:
+      del self.__conn._store[self.__ticket]
     return out
 
   def get(self, timeout=None):  # timeout in seconds
@@ -243,7 +243,7 @@ class Future(object):
     self.__conn._cond.acquire()
     tm = datetime.datetime.now()
     while True:
-      msg = self.__get_store(self.__ticker)
+      msg = self.__get_store(self.__ticket)
       err = self.__get_store(-1)
       if msg == None and err == None:
         self.__conn._cond.wait()

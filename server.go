@@ -152,7 +152,7 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
+func reply(ticket int, res interface{}, ch chan []byte, useJson bool) {
 	defer func() {
 		if err := recover(); err != nil {
 			// send on closed channel
@@ -161,16 +161,16 @@ func reply(ticker int, res interface{}, ch chan []byte, useJson bool) {
 	var data []byte
 	var err error
 	if useJson {
-		data, err = json.Marshal(map[string]interface{}{"0": ticker, "1": res})
+		data, err = json.Marshal(map[string]interface{}{"0": ticket, "1": res})
 	} else {
-		data, err = bson.Marshal(map[string]interface{}{"0": ticker, "1": res})
+		data, err = bson.Marshal(map[string]interface{}{"0": ticket, "1": res})
 	}
 	if err != nil {
-		reply(ticker, "Internal error: "+err.Error(), ch, useJson)
+		reply(ticket, "Internal error: "+err.Error(), ch, useJson)
 		return
 	}
 	if len(data) > math.MaxUint32 {
-		reply(ticker, "Results too large", ch, useJson)
+		reply(ticket, "Results too large", ch, useJson)
 		return
 	}
 	var size [4]byte
@@ -235,7 +235,7 @@ func (self *connection) process() {
 			var data map[string]interface{}
 			var err error
 			var ok bool
-			var ticker int
+			var ticket int
 			var cmd string
 			var sql string
 			var preparedId int
@@ -261,9 +261,9 @@ func (self *connection) process() {
 				res = "Invalid bson: " + err.Error()
 				goto reply
 			}
-			ticker, ok = data["0"].(int)
+			ticket, ok = data["0"].(int)
 			if !ok {
-				res = fmt.Sprint("Invalid ticker, expected int, got ", data["0"])
+				res = fmt.Sprint("Invalid ticket, expected int, got ", data["0"])
 				goto reply
 			}
 			cmd, ok = data["1"].(string)
@@ -363,7 +363,7 @@ func (self *connection) process() {
 				res = "Invalid command " + cmd
 			}
 		reply:
-			reply(ticker, res, self.ch, useJson)
+			reply(ticket, res, self.ch, useJson)
 		}()
 	}
 }

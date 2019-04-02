@@ -56,6 +56,7 @@ struct AbstractFuture {
 typedef std::shared_ptr<AbstractFuture> Future;
 typedef std::vector<ValueScalar> Args;
 typedef std::vector<Args> Argss;
+typedef std::function<void(ResultSet, const std::string&)> Callback;
 
 class Connection : public std::enable_shared_from_this<Connection> {
  public:
@@ -64,7 +65,8 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void ConnectAsync();
   bool IsConnected() const { return 1 == connected_; }
   void Use(const std::string& dbName);
-  Future ExecuteAsync(const std::string& sql, const Args& args = Args{});
+  Future ExecuteAsync(const std::string& sql, const Args& args = Args{},
+                      Callback callback = Callback{});
   ResultSet Execute(const std::string& sql, const Args& args = Args{});
   Future BatchInsertAsync(const std::string& sql, const Argss& argss);
   void BatchInsert(const std::string& sql, const Argss& argss);
@@ -101,12 +103,13 @@ class Connection : public std::enable_shared_from_this<Connection> {
   boost::asio::io_service::work worker_;
   boost::asio::ip::tcp::socket socket_;
   std::thread thread_;
-  std::atomic<int> ticker_counter_ = 0;
+  std::atomic<int> ticket_counter_ = 0;
   std::condition_variable cv_;
   std::mutex m_cv_;
   std::mutex m_;
   std::map<std::string, int> prepared_;
   std::map<int, Value> store_;
+  std::map<int, Callback> callbacks_;
   friend class FutureImpl;
   Logger::Ptr logger_;
 };
@@ -123,8 +126,8 @@ class Exception : public std::exception {
 struct FutureImpl : public AbstractFuture {
   ResultSet Get(double timeout = 0) override;
   Value Get_(double timeout = 0);
-  FutureImpl(int t, Connection::Ptr c) : ticker(t), conn(c) {}
-  int ticker;
+  FutureImpl(int t, Connection::Ptr c) : ticket(t), conn(c) {}
+  int ticket;
   Connection::Ptr conn;
 };
 
@@ -194,6 +197,7 @@ inline void Connection::Close() {
     {
       std::lock_guard<std::mutex> lock(self->m_);
       self->prepared_.clear();
+      self->callbacks_.clear();
     }
     {
       std::lock_guard<std::mutex> lk(self->m_cv_);
@@ -203,9 +207,9 @@ inline void Connection::Close() {
 }
 
 inline void Connection::Use(const std::string& dbName) {
-  auto ticker = ++ticker_counter_;
-  Send(json::to_bson(json{{"0", ticker}, {"1", "use"}, {"2", dbName}}));
-  FutureImpl(ticker, shared_from_this()).Get(default_timeout_);
+  auto ticket = ++ticket_counter_;
+  Send(json::to_bson(json{{"0", ticket}, {"1", "use"}, {"2", dbName}}));
+  FutureImpl(ticket, shared_from_this()).Get(default_timeout_);
 }
 
 inline void Connection::ReadHead() {
@@ -249,18 +253,18 @@ inline void Connection::ReadBody(unsigned len) {
         }
         try {
           auto j = json::from_bson(self->msg_in_buf_);
-          auto ticker = j["0"].get<std::int64_t>();
+          auto ticket = j["0"].get<std::int64_t>();
           auto tmp = j["1"];
           if (tmp.is_string()) {
-            self->Notify(ticker, tmp.get<std::string>());
+            self->Notify(ticket, tmp.get<std::string>());
           } else if (tmp.is_number_integer()) {
-            self->Notify(ticker, tmp.get<std::int64_t>());
+            self->Notify(ticket, tmp.get<std::int64_t>());
           } else if (tmp.is_number_float()) {
-            self->Notify(ticker, tmp.get<double>());
+            self->Notify(ticket, tmp.get<double>());
           } else if (tmp.is_boolean()) {
-            self->Notify(ticker, tmp.get<bool>());
+            self->Notify(ticket, tmp.get<bool>());
           } else if (tmp.is_null()) {
-            self->Notify(ticker, ValueScalar(nullptr));
+            self->Notify(ticket, ValueScalar(nullptr));
           } else {
             auto v = std::make_shared<ValuesVector>();
             v->resize(tmp.size());
@@ -288,7 +292,7 @@ inline void Connection::ReadBody(unsigned len) {
                 }
               }
             }
-            self->Notify(ticker, v);
+            self->Notify(ticket, v);
           }
         } catch (nlohmann::detail::parse_error& e) {
           self->logger_->Error("OpenTick: Invalid bson");
@@ -342,9 +346,9 @@ inline int Connection::Prepare(const std::string& sql) {
     auto it = prepared_.find(sql);
     if (it != prepared_.end()) return it->second;
   }
-  auto ticker = ++ticker_counter_;
-  Send(json::to_bson(json{{"0", ticker}, {"1", "prepare"}, {"2", sql}}));
-  FutureImpl f(ticker, shared_from_this());
+  auto ticket = ++ticket_counter_;
+  Send(json::to_bson(json{{"0", ticket}, {"1", "prepare"}, {"2", sql}}));
+  FutureImpl f(ticket, shared_from_this());
   auto id = std::get<std::int64_t>(std::get<ValueScalar>(f.Get_()));
   {
     std::lock_guard<std::mutex> lock(m_);
@@ -358,7 +362,7 @@ inline Value FutureImpl::Get_(double timeout) {
   auto start = system_clock::now();
   timeout *= 1e6;
   while (true) {
-    auto it1 = conn->store_.find(ticker);
+    auto it1 = conn->store_.find(ticket);
     if (it1 != conn->store_.end()) {
       auto tmp = it1->second;
       conn->store_.erase(it1);
@@ -389,9 +393,29 @@ inline ResultSet FutureImpl::Get(double timeout) {
   return {};
 }
 
-inline void Connection::Notify(int ticker, const Value& value) {
+inline void Connection::Notify(int ticket, const Value& value) {
+  Callback callback;
+  {
+    std::lock_guard<std::mutex> lock(m_);
+    auto it = callbacks_.find(ticket);
+    if (it != callbacks_.end()) {
+      callback = it->second;
+      callbacks_.erase(it);
+      if (!callback) return;  // timeout
+    }
+  }
+  if (callback) {
+    if (auto ptr = std::get_if<ValueScalar>(&value)) {
+      if (auto ptr2 = std::get_if<std::string>(ptr)) {
+        callback(ResultSet{}, *ptr2);
+      }
+    } else if (auto ptr = std::get_if<ResultSet>(&value)) {
+      callback(*ptr, "");
+    }
+    return;
+  }
   std::lock_guard<std::mutex> lk(m_cv_);
-  store_[ticker] = value;
+  store_[ticket] = value;
   cv_.notify_all();
 }
 
@@ -411,19 +435,45 @@ inline void ConvertArgs(const Args& args, json& jargs) {
   }
 }
 
-inline Future Connection::ExecuteAsync(const std::string& sql,
-                                       const Args& args) {
+inline Future Connection::ExecuteAsync(const std::string& sql, const Args& args,
+                                       Callback callback) {
   auto prepared = -1;
   json jargs;
   if (args.size()) {
     ConvertArgs(args, jargs);
     prepared = Prepare(sql);
   }
-  auto ticker = ++ticker_counter_;
-  json j = {{"0", ticker}, {"1", "run"}, {"2", sql}, {"3", jargs}};
+  auto ticket = ++ticket_counter_;
+  json j = {{"0", ticket}, {"1", "run"}, {"2", sql}, {"3", jargs}};
   if (prepared >= 0) j["2"] = prepared;
   Send(json::to_bson(j));
-  return Future(new FutureImpl(ticker, shared_from_this()));
+  if (callback) {
+    {
+      std::lock_guard<std::mutex> lock(m_);
+      callbacks_[ticket] = callback;
+    }
+    if (default_timeout_ > 0) {
+      auto tt = new boost::asio::deadline_timer(
+          io_service_, boost::posix_time::seconds(default_timeout_));
+      auto self = shared_from_this();
+      tt->async_wait([self, ticket, tt](const boost::system::error_code&) {
+        delete tt;
+        Callback callback;
+        {
+          std::lock_guard<std::mutex> lock(self->m_);
+          auto it = self->callbacks_.find(ticket);
+          if (it == self->callbacks_.end()) return;
+          callback = it->second;
+          // reset it rather than erase to let Notify handle it for memory leak
+          // issue of store_
+          it->second = Callback{};
+        }
+        if (callback) callback(ResultSet{}, "timeout");
+      });
+    }
+    return {};
+  }
+  return Future(new FutureImpl(ticket, shared_from_this()));
 }
 
 inline ResultSet Connection::Execute(const std::string& sql, const Args& args) {
@@ -439,10 +489,10 @@ inline Future Connection::BatchInsertAsync(const std::string& sql,
     ConvertArgs(args, data[i++]);
   }
   auto prepared = Prepare(sql);
-  auto ticker = ++ticker_counter_;
+  auto ticket = ++ticket_counter_;
   Send(json::to_bson(
-      json{{"0", ticker}, {"1", "batch"}, {"2", prepared}, {"3", data}}));
-  return Future(new FutureImpl(ticker, shared_from_this()));
+      json{{"0", ticket}, {"1", "batch"}, {"2", prepared}, {"3", data}}));
+  return Future(new FutureImpl(ticket, shared_from_this()));
 }
 
 inline void Connection::BatchInsert(const std::string& sql,
