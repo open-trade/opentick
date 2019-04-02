@@ -1,23 +1,8 @@
 #include "opentick.h"
 
-#include <ctime>
 #include <iostream>
 
 using namespace opentick;
-using namespace std::chrono;
-
-#define LOG(msg)                                                           \
-  do {                                                                     \
-    auto d =                                                               \
-        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()) \
-            .count();                                                      \
-    time_t t = d / 1000000000;                                             \
-    char buf[80];                                                          \
-    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));                 \
-    auto nsec = d % 1000000000;                                            \
-    sprintf(buf + strlen(buf), ".%09ld", nsec);                            \
-    std::cerr << buf << ": " << msg << std::endl;                          \
-  } while (0)
 
 static const std::string kInsert =
     "insert into test(sec, interval, tm, open, high, low, close, vol, vwap) "
