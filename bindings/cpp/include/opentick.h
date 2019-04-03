@@ -62,9 +62,8 @@ class Connection : public std::enable_shared_from_this<Connection> {
  public:
   typedef std::shared_ptr<Connection> Ptr;
   std::string Connect();
-  void ConnectAsync();
   bool IsConnected() const { return 1 == connected_; }
-  void Use(const std::string& dbName);
+  void Use(const std::string& dbName, bool wait = true);
   Future ExecuteAsync(const std::string& sql, const Args& args = {},
                       Callback callback = {});
   ResultSet Execute(const std::string& sql, const Args& args = {});
@@ -73,6 +72,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
   int Prepare(const std::string& sql);
   void Close();
   void SetLogger(Logger::Ptr logger) { logger_ = logger; }
+  void SetAutoReconnect(int interval) { auto_reconnect_ = interval; }
 
   static inline Connection::Ptr Create(const std::string& addr, int port,
                                        const std::string& db_name = "",
@@ -89,8 +89,10 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void Send(T&& msg);
   void Write();
   void Notify(int, const Value&);
+  void AfterConnected(bool sync);
 
  private:
+  int auto_reconnect_ = 0;
   int connected_ = 0;
   std::string ip_;
   int port_ = 0;
@@ -146,28 +148,22 @@ inline std::string Connection::Connect() {
   if (connected_) return {};
   connected_ = -1;
   logger_->Info("OpenTick: Connecting");
+  boost::asio::ip::tcp::endpoint end_pt(
+      boost::asio::ip::address::from_string(ip_), port_);
   try {
     if (default_timeout_ <= 0) {
-      boost::asio::ip::tcp::endpoint end_pt(
-          boost::asio::ip::address::from_string(ip_), port_);
       socket_.connect(end_pt);
     } else {
-      boost::asio::ip::tcp::resolver resolver(io_service_);
-      boost::asio::ip::tcp::resolver::query query(ip_, std::to_string(port_));
-      auto conn_result = boost::asio::async_connect(
-          socket_, resolver.resolve(query), boost::asio::use_future);
+      auto conn_result = socket_.async_connect(end_pt, boost::asio::use_future);
+      // below future not work if Connection::Connect called in io_service
+      // thread, dead loop
       auto status = conn_result.wait_for(seconds(default_timeout_));
       if (status == std::future_status::timeout) {
         throw std::runtime_error("connect timeout");
       }
       conn_result.get();
     }
-    boost::asio::ip::tcp::no_delay option(true);
-    socket_.set_option(option);
-    connected_ = 1;
-    ReadHead();
-    if (default_use_.size()) Use(default_use_);
-    logger_->Info("OpenTick: Connected");
+    AfterConnected(true);
   } catch (std::exception& e) {
     Close();
     logger_->Error("OpenTick: Failed to connect: " + std::string(e.what()));
@@ -176,10 +172,13 @@ inline std::string Connection::Connect() {
   return {};
 }
 
-inline void Connection::ConnectAsync() {
-  if (connected_) return;
-  auto self = shared_from_this();
-  io_service_.post([self]() { self->Connect(); });
+inline void Connection::AfterConnected(bool sync) {
+  boost::asio::ip::tcp::no_delay option(true);
+  socket_.set_option(option);
+  connected_ = 1;
+  ReadHead();
+  if (default_use_.size()) Use(default_use_, sync);
+  logger_->Info("OpenTick: Connected");
 }
 
 inline void Connection::Close() {
@@ -203,13 +202,33 @@ inline void Connection::Close() {
       std::lock_guard<std::mutex> lk(self->m_cv_);
       self->store_.clear();
     }
+    if (self->auto_reconnect_ > 0) {
+      auto tt = new boost::asio::deadline_timer(
+          self->io_service_, boost::posix_time::seconds(self->auto_reconnect_));
+      tt->async_wait([self, tt](const boost::system::error_code&) {
+        delete tt;
+        boost::asio::ip::tcp::endpoint end_pt(
+            boost::asio::ip::address::from_string(self->ip_), self->port_);
+        self->logger_->Info("OpenTick: trying reconnect");
+        self->socket_.async_connect(
+            end_pt, [self](const boost::system::error_code& e) {
+              if (e) {
+                self->Close();
+                self->logger_->Error("OpenTick: Failed to connect: " +
+                                     std::string(e.message()));
+                return;
+              }
+              self->AfterConnected(false);
+            });
+      });
+    }
   });
 }
 
-inline void Connection::Use(const std::string& dbName) {
+inline void Connection::Use(const std::string& dbName, bool wait) {
   auto ticket = ++ticket_counter_;
   Send(json::to_bson(json{{"0", ticket}, {"1", "use"}, {"2", dbName}}));
-  FutureImpl(ticket, shared_from_this()).Get(default_timeout_);
+  if (wait) FutureImpl(ticket, shared_from_this()).Get(default_timeout_);
 }
 
 inline void Connection::ReadHead() {
@@ -219,6 +238,7 @@ inline void Connection::ReadHead() {
       socket_, boost::asio::buffer(msg_in_buf_, 4),
       [=](const boost::system::error_code& e, size_t) {
         if (e) {
+          self->Close();
           self->logger_->Error("OpenTick: Connection closed: " + e.message());
           self->Notify(-1, e.message());
           return;
@@ -241,8 +261,7 @@ inline void Connection::ReadBody(unsigned len) {
       [self, len](const boost::system::error_code& e, size_t) {
         if (e) {
           self->Close();
-          self->logger_->Error(
-              "OpenTick: Failed to send message. Error code: " + e.message());
+          self->logger_->Error("OpenTick: Connection closed: " + e.message());
           self->Notify(-1, e.message());
           return;
         }
