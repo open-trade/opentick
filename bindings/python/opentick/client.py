@@ -52,6 +52,7 @@ class Connection(threading.Thread):
     self.__auto_reconnect = 1
     self.__ticket_counter = 0
     self.__active = True
+    self.__connected = None  # None here tell Connection not initialized yet
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
     self._store = {}
@@ -61,7 +62,11 @@ class Connection(threading.Thread):
     try:
       self.__connect(True)
     except Exception as e:
+      self.__connected = False
       raise e
+
+  def is_connected(self):
+    return self.__connected
 
   def set_auto_reconnect(self, interval):
     self.__auto_reconnect = interval
@@ -129,6 +134,7 @@ class Connection(threading.Thread):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
     sock.connect((self.__addr, self.__port))
     logging.info('OpenTick: connected')
+    self.__connected = True
     if self.__db_name:
       self.use(self.__db_name, sync)
 
@@ -172,7 +178,7 @@ class Connection(threading.Thread):
 
   def run(self):
     while self.__active:
-      if not self.__sock:
+      if self.__connected is None:  # initializing
         time.sleep(1e-6)
         continue
       try:
@@ -232,6 +238,7 @@ class Connection(threading.Thread):
           continue
 
   def __close_socket(self):
+    self.__connected = False
     self._mutex.acquire()
     self.__prepared.clear()
     self._mutex.release()
