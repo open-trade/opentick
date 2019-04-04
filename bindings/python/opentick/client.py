@@ -10,6 +10,8 @@ import six
 from bson import BSON
 import threading
 import pytz
+import time
+import logging
 
 fromtimestamp = datetime.datetime.fromtimestamp
 utc_start = fromtimestamp(0, pytz.utc)
@@ -18,17 +20,6 @@ localize = pytz.utc.localize
 
 class Error(RuntimeError):
   pass
-
-
-def connect(addr, port, db_name=''):
-  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-  microsecs = 100000
-  timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
-  sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
-  sock.connect((addr, port))
-  conn = Connection(sock, db_name)
-  return conn
 
 
 def split_range(start, end, num_parts):
@@ -45,36 +36,50 @@ def split_range(start, end, num_parts):
   return out
 
 
+class PleaseReconnect(Exception):
+  pass
+
+
 class Connection(threading.Thread):
 
-  def __init__(self, sock, db_name):
+  def __init__(self, addr, port, db_name=None):
     threading.Thread.__init__(self)
-    self.__sock = sock
+    self.__addr = addr
+    self.__port = port
+    self.__db_name = db_name
+    self.__sock = None
     self.__prepared = {}
+    self.__auto_reconnect = 1
     self.__ticket_counter = 0
+    self.__active = True
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
     self._store = {}
-    self.start()
-    if db_name:
-      self.use(db_name)
 
-  def use(self, db_name):
+  def start(self):
+    try:
+      self.__connect(True)
+      super().start()
+    except Exception as e:
+      super().start()
+      raise e
+
+  def set_auto_reconnect(self, interval):
+    self.__auto_reconnect = interval
+
+  def use(self, db_name, wait=True):
     ticket = self.__get_ticket()
     cmd = {'0': ticket, '1': 'use', '2': db_name}
     self.__send(cmd)
+    if not wait: return
     try:
       Future(ticket, self).get()
     except Error as e:
-      self.close()
       raise e
 
   def close(self):
-    try:
-      self.__sock.shutdown(socket.SHUT_RDWR)
-    except socket.error as e:
-      pass
-    self.__sock.close()
+    self.__active = False
+    self.__close_socket()
     self.join()
 
   def execute(self, sql, args=[]):
@@ -115,6 +120,19 @@ class Connection(threading.Thread):
     self.__send(cmd)
     return Future(ticket, self)
 
+  def __connect(self, sync=False):
+    logging.info('OpenTick: connecting')
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self.__sock = sock
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    microsecs = 100000
+    timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
+    sock.connect((self.__addr, self.__port))
+    logging.info('OpenTick: connected')
+    if self.__db_name:
+      self.use(self.__db_name, sync)
+
   def __execute_ranges_async(self, sql, args):
     ranges = args[-1]
     futs = []
@@ -154,46 +172,75 @@ class Connection(threading.Thread):
     self._cond.release()
 
   def run(self):
-    while True:
-      n = 4
-      head = six.b('')
-      while n > 0:
+    while self.__active:
+      try:
+        n = 4
+        head = six.b('')
+        while n > 0:
+          try:
+            got = self.__sock.recv(n)
+          except socket.error as e:
+            if e.errno == 11:  # timeout
+              self.__notify(-1, None)
+              continue
+            self.__notify(-1, e)
+            raise PleaseReconnect()
+          if not got:
+            self.__notify(-1, Error('Connection reset by peer'))
+            raise PleaseReconnect()
+          n -= len(got)
+          head += got
+        assert (len(head) == 4)
+        n0 = n = struct.unpack('<I', head)[0]
+        if not n: continue
+        body = six.b('')
+        while n > 0:
+          try:
+            got = self.__sock.recv(n)
+          except socket.error as e:
+            if e.errno == 11:  # timeout
+              self.__notify(-1, None)
+              continue
+            self.__notify(-1, e)
+            raise PleaseReconnect()
+          if not got:
+            self.__notify(-1, Error('Connection reset by peer'))
+            raise PleaseReconnect()
+          n -= len(got)
+          body += got
+        if n0 == 1 and body == six.b('H'):  # heartbeat
+          try:
+            self.__send()
+          except socket.error as e:
+            raise PleaseReconnect()
+          continue
+        msg = BSON(body).decode()
+        self.__notify(msg['0'], msg)
+      except PleaseReconnect as e:
+        if self.__auto_reconnect < 1: return
+        if not self.__active: return
+        time.sleep(self.__auto_reconnect)
+        if not self.__active: return
+        logging.info('OpenTick: trying reconnect')
+        self.__close_socket()
         try:
-          got = self.__sock.recv(n)
+          self.__connect()
         except socket.error as e:
-          if e.errno == 11:  # timeout
-            self.__notify(-1, None)
-            continue
-          self.__notify(-1, e)
-          return
-        if not got:
-          self.__notify(-1, Error('Connection reset by peer'))
-          return
-        n -= len(got)
-        head += got
-      assert (len(head) == 4)
-      n0 = n = struct.unpack('<I', head)[0]
-      if not n: continue
-      body = six.b('')
-      while n > 0:
-        try:
-          got = self.__sock.recv(n)
-        except socket.error as e:
-          if e.errno == 11:  # timeout
-            self.__notify(-1, None)
-            continue
-          self.__notify(-1, e)
-          return
-        if not got:
-          self.__notify(-1, Error('Connection reset by peer'))
-          return
-        n -= len(got)
-        body += got
-      if n0 == 1 and body == six.b('H'):  # heartbeat
-        self.__send()
-        continue
-      msg = BSON(body).decode()
-      self.__notify(msg['0'], msg)
+          logging.error('OpenTick: failed to connect: ' + str(e))
+          continue
+
+  def __close_socket(self):
+    self._mutex.acquire()
+    self.__prepared.clear()
+    self._mutex.release()
+    self._cond.acquire()
+    self._store.clear()
+    self._cond.release()
+    try:
+      self.__sock.shutdown(socket.SHUT_RDWR)
+    except socket.error as e:
+      pass
+    self.__sock.close()
 
   def __send(self, msg=None):
     out = None

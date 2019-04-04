@@ -6,6 +6,16 @@ from six.moves import xrange
 import six
 import pytz
 import time
+import logging
+import sys
+
+rootLogger = logging.getLogger()
+consoleHandler = logging.StreamHandler(sys.stdout)
+logFormatter = logging.Formatter(
+    '%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s')
+consoleHandler.setFormatter(logFormatter)
+rootLogger.addHandler(consoleHandler)
+rootLogger.setLevel(logging.INFO)
 
 localize = pytz.utc.localize
 conn = None
@@ -16,8 +26,8 @@ def log(*args):
 
 
 try:
-  conn = opentick.connect('127.0.0.1', 1116)
-  log('connected')
+  conn = opentick.Connection('127.0.0.1', 1116)
+  conn.start()
   res = conn.execute('create database if not exists test')
   conn.use('test')
   res = conn.execute(
