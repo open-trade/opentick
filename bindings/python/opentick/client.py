@@ -57,11 +57,10 @@ class Connection(threading.Thread):
     self._store = {}
 
   def start(self):
+    super().start()
     try:
       self.__connect(True)
-      super().start()
     except Exception as e:
-      super().start()
       raise e
 
   def set_auto_reconnect(self, interval):
@@ -173,6 +172,9 @@ class Connection(threading.Thread):
 
   def run(self):
     while self.__active:
+      if not self.__sock:
+        time.sleep(1e-6)
+        continue
       try:
         n = 4
         head = six.b('')
