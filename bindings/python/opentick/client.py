@@ -56,6 +56,7 @@ class Connection(threading.Thread):
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
     self._store = {}
+    self.daemon = True
 
   def start(self):
     super().start()
@@ -326,7 +327,7 @@ class Future(object):
                   datetime.timedelta(microseconds=v[1] / 1000)
       return msg
     if err:
-      raise err
+      raise Error(err)
 
 
 class Futures(object):
