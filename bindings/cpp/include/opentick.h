@@ -61,8 +61,8 @@ typedef std::function<void(ResultSet, const std::string&)> Callback;
 class Connection : public std::enable_shared_from_this<Connection> {
  public:
   typedef std::shared_ptr<Connection> Ptr;
-  std::string Start();
-  bool IsConnected() const { return 1 == connected_; }
+  std::string Start() noexcept;
+  bool IsConnected() const noexcept { return 1 == connected_; }
   void Use(const std::string& dbName, bool wait = true);
   Future ExecuteAsync(const std::string& sql, const Args& args = {},
                       Callback callback = {});
@@ -71,8 +71,8 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void BatchInsert(const std::string& sql, const Argss& argss);
   int Prepare(const std::string& sql);
   void Close();
-  void SetLogger(Logger::Ptr logger) { logger_ = logger; }
-  void SetAutoReconnect(int interval) { auto_reconnect_ = interval; }
+  void SetLogger(Logger::Ptr logger) noexcept { logger_ = logger; }
+  void SetAutoReconnect(int interval) noexcept { auto_reconnect_ = interval; }
 
   static inline Connection::Ptr Create(const std::string& addr, int port,
                                        const std::string& db_name = "",
@@ -144,7 +144,7 @@ inline Connection::Connection(const std::string& ip, int port,
       thread_([this]() { io_service_.run(); }),
       logger_(new Logger) {}
 
-inline std::string Connection::Start() {
+inline std::string Connection::Start() noexcept {
   if (connected_) return {};
   connected_ = -1;
   logger_->Info("OpenTick: Connecting");

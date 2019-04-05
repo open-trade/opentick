@@ -11,7 +11,7 @@ static const std::string kInsert =
 int main() {
   auto conn = Connection::Create("127.0.0.1", 1116);
   LOG("connecting");
-  auto err = conn->Connect();
+  auto err = conn->Start();
   if (err.empty()) {
     LOG("connected");
   } else {
