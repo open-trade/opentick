@@ -62,8 +62,9 @@ class Connection(threading.Thread):
     try:
       self.__connect(True)
     except Exception as e:
+      logging.error(e)
       self.__connected = False
-      raise e
+      return str(e)
 
   def is_connected(self):
     return self.__connected

@@ -61,7 +61,7 @@ typedef std::function<void(ResultSet, const std::string&)> Callback;
 class Connection : public std::enable_shared_from_this<Connection> {
  public:
   typedef std::shared_ptr<Connection> Ptr;
-  std::string Connect();
+  std::string Start();
   bool IsConnected() const { return 1 == connected_; }
   void Use(const std::string& dbName, bool wait = true);
   Future ExecuteAsync(const std::string& sql, const Args& args = {},
@@ -144,7 +144,7 @@ inline Connection::Connection(const std::string& ip, int port,
       thread_([this]() { io_service_.run(); }),
       logger_(new Logger) {}
 
-inline std::string Connection::Connect() {
+inline std::string Connection::Start() {
   if (connected_) return {};
   connected_ = -1;
   logger_->Info("OpenTick: Connecting");
@@ -159,7 +159,7 @@ inline std::string Connection::Connect() {
       // thread, dead loop
       auto status = conn_result.wait_for(seconds(default_timeout_));
       if (status == std::future_status::timeout) {
-        throw std::runtime_error("connect timeout");
+        throw Exception("connect timeout");
       }
       conn_result.get();
     }
