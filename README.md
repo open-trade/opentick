@@ -76,7 +76,8 @@ user@host:~/opentick/bindings/cpp$ make test
 
 * **Create database and table**
 ```C++
-auto conn = Connect("127.0.0.1", 1116);
+auto conn = Connection::Create("127.0.0.1", 1116);
+conn->Start();
 conn->Execute("create database if not exists test");
 conn->Use("test");
 conn->Execute(R"(
