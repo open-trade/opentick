@@ -36,7 +36,7 @@ def split_range(start, end, num_parts):
   return out
 
 
-class __PleaseReconnect(Exception):
+class _PleaseReconnect(Exception):
   pass
 
 
@@ -201,10 +201,10 @@ class Connection(threading.Thread):
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
-            raise __PleaseReconnect()
+            raise _PleaseReconnect()
           if not got:
             self.__notify(-1, Error('Connection reset by peer'))
-            raise __PleaseReconnect()
+            raise _PleaseReconnect()
           n -= len(got)
           head += got
         assert (len(head) == 4)
@@ -220,21 +220,21 @@ class Connection(threading.Thread):
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
-            raise __PleaseReconnect()
+            raise _PleaseReconnect()
           if not got:
             self.__notify(-1, Error('Connection reset by peer'))
-            raise __PleaseReconnect()
+            raise _PleaseReconnect()
           n -= len(got)
           body += got
         if n0 == 1 and body == six.b('H'):  # heartbeat
           try:
             self.__send()
           except socket.error as e:
-            raise __PleaseReconnect()
+            raise _PleaseReconnect()
           continue
         msg = BSON(body).decode()
         self.__notify(msg['0'], msg)
-      except __PleaseReconnect as e:
+      except _PleaseReconnect as e:
         if self.__auto_reconnect < 1: return
         if not self.__active: return
         time.sleep(self.__auto_reconnect)
