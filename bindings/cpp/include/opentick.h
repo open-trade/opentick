@@ -368,7 +368,7 @@ inline int Connection::Prepare(const std::string& sql) {
   auto ticket = ++ticket_counter_;
   Send(json::to_bson(json{{"0", ticket}, {"1", "prepare"}, {"2", sql}}));
   FutureImpl f(ticket, shared_from_this());
-  auto id = std::get<std::int64_t>(std::get<ValueScalar>(f.Get_()));
+  auto id = std::get<std::int64_t>(std::get<ValueScalar>(f.Get_(default_timeout_)));
   {
     std::lock_guard<std::mutex> lock(m_);
     prepared_.emplace(sql, id);

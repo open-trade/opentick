@@ -36,13 +36,13 @@ def split_range(start, end, num_parts):
   return out
 
 
-class PleaseReconnect(Exception):
+class __PleaseReconnect(Exception):
   pass
 
 
 class Connection(threading.Thread):
 
-  def __init__(self, addr, port, db_name=None):
+  def __init__(self, addr, port, db_name=None, timeout=15):
     threading.Thread.__init__(self)
     self.__addr = addr
     self.__port = port
@@ -55,6 +55,7 @@ class Connection(threading.Thread):
     self.__connected = None  # None here tell Connection not initialized yet
     self._mutex = threading.Lock()
     self._cond = threading.Condition()
+    self.__default_timeout = timeout
     self._store = {}
     self.daemon = True
 
@@ -79,7 +80,7 @@ class Connection(threading.Thread):
     self.__send(cmd)
     if not wait: return
     try:
-      Future(ticket, self).get()
+      Future(ticket, self).get(self.__default_timeout)
     except Error as e:
       raise e
 
@@ -88,12 +89,13 @@ class Connection(threading.Thread):
     self.__close_socket()
     self.join()
 
-  def execute(self, sql, args=[], timeout=None):
+  def execute(self, sql, args=[]):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql, args).get()
-    return self.execute_async(sql, args).get()
+          return self.__execute_ranges_async(sql, args).get(
+              self.__default_timeout)
+    return self.execute_async(sql, args).get(self.__default_timeout)
 
   def execute_async(self, sql, args=[]):
     prepared = None
@@ -113,7 +115,7 @@ class Connection(threading.Thread):
 
   def batch_insert(self, sql, argsArray):
     fut = self.batch_insert_async(sql, argsArray)
-    fut.get()
+    fut.get(self.__default_timeout)
 
   def batch_insert_async(self, sql, argsArray):
     if not argsArray:
@@ -131,6 +133,10 @@ class Connection(threading.Thread):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.__sock = sock
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    if self.__default_timeout:
+      microsecs = int(self.__default_timeout * 1e6)
+      timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
+      sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
     sock.connect((self.__addr, self.__port))
     microsecs = 100000
     timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
@@ -165,7 +171,7 @@ class Connection(threading.Thread):
       ticket = self.__get_ticket()
       cmd = {'0': ticket, '1': 'prepare', '2': sql}
       self.__send(cmd)
-      n = Future(ticket, self).get()
+      n = Future(ticket, self).get(self.__default_timeout)
       self._mutex.acquire()
       self.__prepared[sql] = n
       prepared = n
@@ -190,14 +196,15 @@ class Connection(threading.Thread):
           try:
             got = self.__sock.recv(n)
           except socket.error as e:
-            if e.errno == 11 or e.errno == 35:  # timeout or Resource temporarily unavailable
+            if e.errno in (11,
+                           35):  # timeout or Resource temporarily unavailable
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
-            raise PleaseReconnect()
+            raise __PleaseReconnect()
           if not got:
             self.__notify(-1, Error('Connection reset by peer'))
-            raise PleaseReconnect()
+            raise __PleaseReconnect()
           n -= len(got)
           head += got
         assert (len(head) == 4)
@@ -208,25 +215,26 @@ class Connection(threading.Thread):
           try:
             got = self.__sock.recv(n)
           except socket.error as e:
-            if e.errno == 11 or e.errno == 35:  # timeout or Resource temporarily unavailable
+            if e.errno in (11,
+                           35):  # timeout or Resource temporarily unavailable
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
-            raise PleaseReconnect()
+            raise __PleaseReconnect()
           if not got:
             self.__notify(-1, Error('Connection reset by peer'))
-            raise PleaseReconnect()
+            raise __PleaseReconnect()
           n -= len(got)
           body += got
         if n0 == 1 and body == six.b('H'):  # heartbeat
           try:
             self.__send()
           except socket.error as e:
-            raise PleaseReconnect()
+            raise __PleaseReconnect()
           continue
         msg = BSON(body).decode()
         self.__notify(msg['0'], msg)
-      except PleaseReconnect as e:
+      except __PleaseReconnect as e:
         if self.__auto_reconnect < 1: return
         if not self.__active: return
         time.sleep(self.__auto_reconnect)
