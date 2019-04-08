@@ -88,7 +88,7 @@ class Connection(threading.Thread):
     self.__close_socket()
     self.join()
 
-  def execute(self, sql, args=[]):
+  def execute(self, sql, args=[], timeout=None):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
@@ -131,10 +131,10 @@ class Connection(threading.Thread):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.__sock = sock
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    sock.connect((self.__addr, self.__port))
     microsecs = 100000
     timeval = struct.pack('ll', int(microsecs / 1e6), int(microsecs % 1e6))
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
-    sock.connect((self.__addr, self.__port))
     logging.info('OpenTick: connected')
     self.__connected = True
     if self.__db_name:
@@ -190,7 +190,7 @@ class Connection(threading.Thread):
           try:
             got = self.__sock.recv(n)
           except socket.error as e:
-            if e.errno == 11:  # timeout
+            if e.errno == 11 or e.errno == 35:  # timeout or Resource temporarily unavailable
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
@@ -208,7 +208,7 @@ class Connection(threading.Thread):
           try:
             got = self.__sock.recv(n)
           except socket.error as e:
-            if e.errno == 11:  # timeout
+            if e.errno == 11 or e.errno == 35:  # timeout or Resource temporarily unavailable
               self.__notify(-1, None)
               continue
             self.__notify(-1, e)
