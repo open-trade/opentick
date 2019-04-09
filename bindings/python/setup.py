@@ -40,5 +40,8 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
+        'Topic :: Database :: Database Engines/Servers',
+        'Intended Audience :: Information Technology',
+        'Intended Audience :: Financial and Insurance Industry'
     ),
 )
