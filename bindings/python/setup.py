@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""Define the setup options."""
-
 try:
   import distribute_setup
   distribute_setup.use_setuptools()
@@ -25,16 +21,16 @@ with open('README.rst', 'r') as f:
 setup(
     name='opentick',
     version=version,
-    description="InfluxDB client",
+    author='OpenTrade Solutions',
+    description='OpenTick SDK',
+    author_email='info@opentradesolutions.com',
     long_description=readme,
-    url='github.com/opentradesolutions/opentick',
-    license='MIT License',
+    url='https://github.com/opentradesolutions/opentick',
+    license='Apache License',
     packages=find_packages(exclude=['tests']),
     install_requires=requires,
     classifiers=(
-        'Development Status :: 1 - Alpha',
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
