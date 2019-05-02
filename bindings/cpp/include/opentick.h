@@ -93,7 +93,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
 
  private:
   int auto_reconnect_ = 0;
-  int connected_ = 0;
+  std::atomic<int> connected_ = 0;
   std::string ip_;
   int port_ = 0;
   std::string default_use_;
@@ -182,6 +182,7 @@ inline void Connection::AfterConnected(bool sync) {
 }
 
 inline void Connection::Close() {
+  if (!connected_) return;
   connected_ = 0;
   auto self = shared_from_this();
   io_service_.post([self]() {
@@ -368,7 +369,7 @@ inline int Connection::Prepare(const std::string& sql) {
   auto ticket = ++ticket_counter_;
   Send(json::to_bson(json{{"0", ticket}, {"1", "prepare"}, {"2", sql}}));
   FutureImpl f(ticket, shared_from_this());
-  auto id = std::get<std::int64_t>(std::get<ValueScalar>(f.Get_(default_timeout_)));
+  auto id = std::get<std::int64_t>(std::get<ValueScalar>(f.Get_()));
   {
     std::lock_guard<std::mutex> lock(m_);
     prepared_.emplace(sql, id);
