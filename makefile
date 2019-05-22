@@ -4,5 +4,8 @@ build:
 test:
 	go test
 
+run:
+	cd main; go run main.go; cd -
+
 benchmark:
 	go test -test.bench='.*'
