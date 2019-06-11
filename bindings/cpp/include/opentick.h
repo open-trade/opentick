@@ -3,6 +3,8 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <boost/asio/use_future.hpp>
+#include <future>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
