@@ -38,6 +38,9 @@ Fore more configuration on FoundationDB, please check [FoundationDB Configuratio
 # Usage
 
 [Python](https://github.com/opentradesolutions/opentick/blob/master/bindings/python/test.py)
+```bash
+pip install opentick
+```
 
 [C++](https://github.com/opentradesolutions/opentick/blob/master/bindings/cpp/test.cc)
 
