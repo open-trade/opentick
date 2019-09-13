@@ -6,8 +6,14 @@ github.com/apple/foundationdb v0.0.0-20181113211710-8903c5f6212a h1:QbvfYxM3lkKh
 github.com/apple/foundationdb v0.0.0-20181113211710-8903c5f6212a/go.mod h1:r68WTUyFp2yVpUaqVBncjC7C62Cuom4IiEuRCVEKRbw=
 github.com/apple/foundationdb v0.0.0-20190706045952-8d3a826c6328 h1:TKhTswOtDm0Nub/p6wYmC0DrhWD094T3lsL6twMwjl8=
 github.com/apple/foundationdb v0.0.0-20190706045952-8d3a826c6328/go.mod h1:r68WTUyFp2yVpUaqVBncjC7C62Cuom4IiEuRCVEKRbw=
+github.com/apple/foundationdb v0.0.0-20190724023245-90ba203c166c h1:IrJff3SotIzFxVLPCwcHbqiw7eX+o8KNOdEPU7cCgdA=
+github.com/apple/foundationdb v0.0.0-20190724023245-90ba203c166c/go.mod h1:r68WTUyFp2yVpUaqVBncjC7C62Cuom4IiEuRCVEKRbw=
+github.com/apple/foundationdb v0.0.0-20190913053308-7e4bb85252a7 h1:SiqqeizfFakNMa4MkzSynGDsPXEesrWTx6nIjTB1zj0=
 github.com/apple/foundationdb/bindings/go v0.0.0-20190706045952-8d3a826c6328 h1:F7IAQC0aXr9Qrhig5Q0GIeI1flcwpttwojpLOXWcf/c=
 github.com/apple/foundationdb/bindings/go v0.0.0-20190706045952-8d3a826c6328/go.mod h1:OMVSB21p9+xQUIqlGizHPZfjK+SHws1ht+ZytVDoz9U=
+github.com/apple/foundationdb/bindings/go v0.0.0-20190724023245-90ba203c166c h1:+NyJPOJEmyYbbN8YyfGWk2XJMMLyrBJI8UY5s8dWMPI=
+github.com/apple/foundationdb/bindings/go v0.0.0-20190724023245-90ba203c166c/go.mod h1:OMVSB21p9+xQUIqlGizHPZfjK+SHws1ht+ZytVDoz9U=
+github.com/apple/foundationdb/bindings/go v0.0.0-20190913053308-7e4bb85252a7 h1:RJPYspQujU4Ql1ciNgHFQFwoM1LYkaTy74uussXzxqw=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/k0kubun/pp v2.3.0+incompatible h1:EKhKbi34VQDWJtq+zpsKSEhkHHs9w2P8Izbq8IhLVSo=
