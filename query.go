@@ -84,7 +84,7 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 			if dbName == "" {
 				dbName = ast.Drop.Table.DatabaseName()
 			}
-			if ast.Drop.Table.TableName() == "adj" {
+			if ast.Drop.Table.TableName() == "_adj_" {
 				adjCache.clear(dbName)
 			}
 			err = DropTable(db, dbName, ast.Drop.Table.TableName())
@@ -186,7 +186,7 @@ func executeSelect(db fdb.Transactor, stmt *selectStmt, args []interface{}) (res
 }
 
 func executeDelete(db fdb.Transactor, stmt *deleteStmt, args []interface{}) (err error) {
-	if stmt.Schema.TblName == "adj" {
+	if stmt.Schema.TblName == "_adj_" {
 		adjCache.clear(stmt.Schema.DbName)
 	}
 	tmp, _, err1 := executeWhere(db, stmt, args)
@@ -311,7 +311,7 @@ func prepareInsert(stmt *insertStmt, args []interface{}, parts *[2][]tuple.Tuple
 }
 
 func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err error) {
-	if stmt.Schema.TblName == "adj" {
+	if stmt.Schema.TblName == "_adj_" {
 		adjCache.clear(stmt.Schema.DbName)
 	}
 	argsArray := [1][]interface{}{args}
@@ -366,7 +366,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		if funcName != nil {
 			tmp := strings.ToLower(*funcName)
 			funcName = &tmp
-			if tmp == "adj" {
+			if tmp == "_adj_" {
 				tmp = strings.ToLower(col.Name)
 				if strings.Contains(tmp, "qty") || strings.Contains(tmp, "vol") || strings.Contains(tmp, "size") {
 					tmp = "adj_vol"
