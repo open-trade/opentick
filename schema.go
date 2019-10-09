@@ -333,7 +333,7 @@ func CreateTable(db fdb.Transactor, dbName string, ast *AstCreateTable) (err err
 			err = err2
 			return
 		}
-		dirSchema, err3 := dirTable.Create(tr, []string{"schema"}, nil)
+		dirSchema, err3 := dirTable.Create(tr, []string{"scheme"}, nil)
 		if err3 != nil {
 			err = err3
 			return
@@ -360,7 +360,7 @@ func openTable(db fdb.Transactor, dbName string, tblName string) (dirTable direc
 	if err != nil {
 		return
 	}
-	dirSchema, err = dirTable.Open(db, []string{"schema"}, nil)
+	dirSchema, err = dirTable.Open(db, []string{"scheme"}, nil)
 	return
 }
 

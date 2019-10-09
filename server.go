@@ -345,23 +345,23 @@ func (self *connection) process() {
 					goto reply
 				}
 				switch toks[0] {
-				case "dS": // list database or table names
+				case "list_databases":
+					res, err = ListDatabases(getDB())
+					if err != nil {
+						res = err.Error()
+					}
+					goto reply
+				case "list_tables":
 					if dbName == "" {
-						// list database names
-						res, err = ListDatabases(getDB())
-						if err != nil {
-							res = err.Error()
-							goto reply
-						}
+						res = "Please select database first"
 					} else {
-						// list table names
 						res, err = ListTables(getDB(), dbName)
 						if err != nil {
 							res = err.Error()
-							goto reply
 						}
 					}
-				case "ds": // schema of table
+					goto reply
+				case "schema":
 					if len(toks) < 2 {
 						res = "Please specify table name"
 						goto reply

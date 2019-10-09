@@ -12,6 +12,7 @@ import threading
 import pytz
 import time
 import logging
+from numbers import Number
 
 fromtimestamp = datetime.datetime.fromtimestamp
 utc_start = fromtimestamp(0, pytz.utc)
@@ -84,6 +85,33 @@ class Connection(threading.Thread):
     except Error as e:
       raise e
 
+  def list_databases(self):
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'meta', '2': 'list_databases'}
+    self.__send(cmd)
+    try:
+      return Future(ticket, self).get(self.__default_timeout)
+    except Error as e:
+      raise e
+
+  def list_tables(self):
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'meta', '2': 'list_tables'}
+    self.__send(cmd)
+    try:
+      return Future(ticket, self).get(self.__default_timeout)
+    except Error as e:
+      raise e
+
+  def schema(self, table_name):
+    ticket = self.__get_ticket()
+    cmd = {'0': ticket, '1': 'meta', '2': 'schema ' + table_name}
+    self.__send(cmd)
+    try:
+      return Future(ticket, self).get(self.__default_timeout)
+    except Error as e:
+      raise e
+
   def close(self):
     self.__active = False
     self.__close_socket()
@@ -93,8 +121,8 @@ class Connection(threading.Thread):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql, args).get(
-              self.__default_timeout)
+          return self.__execute_ranges_async(sql,
+                                             args).get(self.__default_timeout)
     return self.execute_async(sql, args).get(self.__default_timeout)
 
   def execute_async(self, sql, args=[]):
@@ -330,7 +358,8 @@ class Future(object):
           if isinstance(rec, list):
             for i in xrange(len(rec)):
               v = rec[i]
-              if isinstance(v, list) and len(v) == 2:
+              if isinstance(v, list) and len(v) == 2 and isinstance(
+                  v[0], Number):
                 rec[i] = fromtimestamp(v[0], pytz.utc) + \
                   datetime.timedelta(microseconds=v[1] / 1000)
       return msg
