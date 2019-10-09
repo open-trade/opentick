@@ -70,7 +70,7 @@ func Test_Query(t *testing.T) {
 	stmt2, err2 := resolveDelete(db, "", ast.Delete)
 	assert.Equal(t, nil, err2)
 	assert.Equal(t, 1, stmt2.NumPlaceholders)
-	assert.Equal(t, 4, len(stmt2.Scheme.Keys))
+	assert.Equal(t, 4, len(stmt2.Schema.Keys))
 	Execute(db, "", "drop database test", nil)
 	_, err = Execute(db, "", "drop database test", nil)
 	assert.Equal(t, "Database test does not exist", err.Error())

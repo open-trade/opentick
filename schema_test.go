@@ -15,7 +15,7 @@ var d = NewTableColDef("Test", Double)
 func Test_EncodeTableColDef(t *testing.T) {
 	bytes := d.encode()
 	d2 := TableColDef{}
-	decodeTableColDef(bytes, &d2, schemeVersion)
+	decodeTableColDef(bytes, &d2, schemaVersion)
 	assert.Equal(t, d2.Name, d.Name)
 	assert.Equal(t, d2.Type, d.Type)
 }
@@ -25,25 +25,25 @@ func Benchmark_DecodeTableColDef(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ { //use b.N for looping
 		d2 := TableColDef{}
-		decodeTableColDef(bytes, &d2, schemeVersion)
+		decodeTableColDef(bytes, &d2, schemaVersion)
 	}
 }
 
 var cols = []*TableColDef{NewTableColDef("Test", Double), NewTableColDef("Test", Double), NewTableColDef("Test", Double)}
-var tbl = NewTableScheme(cols, []int{2, 1})
+var tbl = NewTableSchema(cols, []int{2, 1})
 
-func Test_EncodeTableScheme(t *testing.T) {
+func Test_EncodeTableSchema(t *testing.T) {
 	bytes := tbl.encode()
-	t2 := decodeTableScheme(bytes)
+	t2 := decodeTableSchema(bytes)
 	assert.Equal(t, t2.Cols[2], tbl.Cols[2])
 	assert.Equal(t, *t2.Keys[1], *tbl.Keys[1])
 }
 
-func Benchmark_DecodeTableScheme(b *testing.B) {
+func Benchmark_DecodeTableSchema(b *testing.B) {
 	bytes := tbl.encode()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ { //use b.N for looping
-		decodeTableScheme(bytes)
+		decodeTableSchema(bytes)
 	}
 }
 
@@ -151,7 +151,7 @@ func Test_CreateTable(t *testing.T) {
 
 	err = CreateTable(db, "", ast.Create.Table)
 	assert.Equal(t, nil, err)
-	tbl, err1 := GetTableScheme(db, "test", "test")
+	tbl, err1 := GetTableSchema(db, "test", "test")
 	assert.Equal(t, nil, err1)
 	assert.Equal(t, "volume", tbl.Cols[7].Name)
 	assert.Equal(t, "interval", tbl.Keys[1].Name)
@@ -161,7 +161,7 @@ func Test_CreateTable(t *testing.T) {
 	assert.Equal(t, uint32(6), tbl.NameMap["close"].PosCol)
 	assert.Equal(t, uint32(3), tbl.NameMap["close"].Pos)
 	dir, _ := directory.Open(db, []string{"db", "test", "test"}, nil)
-	dir2, _ := directory.Open(db, []string{"db", "test", "test", "scheme"}, nil)
+	dir2, _ := directory.Open(db, []string{"db", "test", "test", "schema"}, nil)
 	assert.Equal(t, len(dir.Bytes()), len(dir2.Bytes()))
 	assert.Equal(t, string(tbl.Dir.Bytes()), string(dir.Bytes()))
 	_, err = Execute(db, "", "alter table test.test rename tm to time", nil)

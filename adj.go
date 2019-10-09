@@ -167,7 +167,7 @@ func applyFunc(db fdb.Transactor, stmt *selectStmt, recs []([2]tuple.Tuple)) {
 			lastSec = sec
 			lastTm = tm
 			if reinit {
-				adjs = adjCache.get(db, stmt.Scheme.DbName, int(sec))
+				adjs = adjCache.get(db, stmt.Schema.DbName, int(sec))
 				if len(adjs) > 0 {
 					iAdj = adjs.bisectRight(tm)
 				}
@@ -215,7 +215,7 @@ func applyFuncOne(db fdb.Transactor, stmt *selectStmt, value tuple.Tuple) {
 }
 
 func applyAdjOne(db fdb.Transactor, stmt *selectStmt, sec int, tm int64, value tuple.Tuple) {
-	adjs := adjCache.get(db, stmt.Scheme.DbName, sec)
+	adjs := adjCache.get(db, stmt.Schema.DbName, sec)
 	if len(adjs) == 0 {
 		return
 	}

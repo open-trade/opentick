@@ -89,7 +89,7 @@ func Test_Server(t *testing.T) {
 	assert.Equal(t, 0, len(res))
 	_, err = conn.Execute("alter table test rename tm to time")
 	assert.Equal(t, nil, err)
-	// scheme is cached, so tm still work even it renamed
+	// schema is cached, so tm still work even it renamed
 	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
 	assert.Equal(t, nil, err)
 	assert.Equal(t, 0, len(res))

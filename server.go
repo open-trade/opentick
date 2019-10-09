@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -242,8 +243,11 @@ func (self *connection) process() {
 			var ast *Ast
 			var res interface{}
 			var args []interface{}
+			var toks []string
 			var exists bool
 			var stmt interface{}
+			var schema *TableSchema
+			var schema_res [2][]interface{}
 			if useJson {
 				err = json.Unmarshal(body, &data)
 			} else {
@@ -334,6 +338,49 @@ func (self *connection) process() {
 				if err != nil {
 					res = err.Error()
 				}
+			} else if cmd == "meta" { // retrieve metadata
+				toks = strings.Split(sql, " ")
+				if len(toks) == 0 {
+					res = "Please specify meta command"
+					goto reply
+				}
+				switch toks[0] {
+				case "dS": // list database or table names
+					if dbName == "" {
+						// list database names
+						res, err = ListDatabases(getDB())
+						if err != nil {
+							res = err.Error()
+							goto reply
+						}
+					} else {
+						// list table names
+						res, err = ListTables(getDB(), dbName)
+						if err != nil {
+							res = err.Error()
+							goto reply
+						}
+					}
+				case "ds": // schema of table
+					if len(toks) < 2 {
+						res = "Please specify table name"
+						goto reply
+					}
+					schema, err = GetTableSchema(getDB(), dbName, toks[1])
+					if err != nil {
+						res = err.Error()
+						goto reply
+					}
+					for _, f := range schema.Keys {
+						schema_res[0] = append(schema_res[0], []string{f.Name, f.Type.Name()})
+					}
+					for _, f := range schema.Values {
+						schema_res[1] = append(schema_res[1], []string{f.Name, f.Type.Name()})
+					}
+					res = schema_res
+					goto reply
+				}
+				res = "Invalid meta command"
 			} else if cmd == "prepare" {
 				ast, err = Parse(sql)
 				if err != nil {
