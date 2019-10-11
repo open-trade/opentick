@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +22,7 @@ var defaultDBs []fdb.Transactor
 var sNumDatabaseConn = 1
 var sMaxConcurrency = 100
 var sTimeout = 0
+var activeConns int32
 
 func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
@@ -86,7 +88,8 @@ func (self *connection) Send(msg []byte) {
 
 func handleConnection(conn net.Conn) {
 	timeout := time.Duration(sTimeout) * time.Second
-	log.Println("New connection from", conn.RemoteAddr())
+	atomic.AddInt32(&activeConns, 1)
+	log.Println("New connection from", conn.RemoteAddr(), ", active:", activeConns)
 	ch := make(chan []byte)
 	client := connection{ch: ch, conn: conn}
 	client.cond = sync.NewCond(&client.mutex)
@@ -422,7 +425,8 @@ func (self *connection) close() {
 	self.closed = true
 	self.cond.Signal()
 	self.mutex.Unlock()
-	log.Println("Closed connection from", self.conn.RemoteAddr())
+	atomic.AddInt32(&activeConns, -1)
+	log.Println("Closed connection from", self.conn.RemoteAddr(), ", active:", activeConns)
 }
 
 func (self *connection) push(data []byte) {
