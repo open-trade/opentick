@@ -248,10 +248,10 @@ func CreateAdj(db fdb.Transactor, dbName string) (err error) {
 	stmt, err1 := Parse(`
 	create table _adj_(
 		sec int,
-  	tm timestamp,
+  	time timestamp,
 		px double,
 		vol double,
-		primary key (sec, tm)
+		primary key (sec, time)
 	)
   `)
 	if err1 != nil {
