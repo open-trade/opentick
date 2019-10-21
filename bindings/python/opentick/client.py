@@ -43,9 +43,15 @@ class _PleaseReconnect(Exception):
 
 class Connection(threading.Thread):
 
-  def __init__(self, addr, port, db_name=None, timeout=15):
+  def __init__(self, addr, port=None, db_name=None, timeout=15):
     threading.Thread.__init__(self)
-    self.__addr = addr
+    # host:port@db_name
+    toks = addr.split('@')
+    if db_name is None and len(toks) == 2: db_name = toks[1]
+    toks = toks[0].split(':')
+    host = toks[0]
+    port = int(toks[1]) if len(toks) == 2 else 1116
+    self.__addr = host
     self.__port = port
     self.__db_name = db_name
     self.__sock = None
@@ -141,11 +147,31 @@ class Connection(threading.Thread):
     self.__send(cmd)
     return Future(ticket, self)
 
-  def batch_insert(self, sql, argsArray):
-    fut = self.batch_insert_async(sql, argsArray)
-    fut.get(self.__default_timeout)
+  def batch_insert(self, sql, argsArray, batch_size=None,
+                   batch_one_by_one=True):
+    if batch_size and batch_one_by_one:
+      while argsArray:
+        x = argsArray[:batch_size]
+        self.batch_insert(sql, x)
+        argsArray = argsArray[batch_size:]
+      return
 
-  def batch_insert_async(self, sql, argsArray):
+    fut = self.batch_insert_async(sql, argsArray, batch_size)
+    if batch_size:
+      assert (not batch_one_by_one)
+      [f.get(self.__default_timeout) for f in fut]
+    else:
+      fut.get(self.__default_timeout)
+
+  def batch_insert_async(self, sql, argsArray, batch_size=None):
+    if batch_size:
+      futs = []
+      while argsArray:
+        x = argsArray[:batch_size]
+        futs.append(self.batch_insert_async(sql, x))
+        argsArray = argsArray[batch_size:]
+      return futs
+
     if not argsArray:
       raise Error('argsArray required')
     for args in argsArray:
