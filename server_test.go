@@ -87,7 +87,7 @@ func Test_Server(t *testing.T) {
 	assert.Equal(t, "Invalid float64 value (2) for \"tm\" of Timestamp", err.Error())
 	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)
 	assert.Equal(t, 0, len(res))
-	_, err = conn.Execute("alter table test rename tm to time")
+	_, err = conn.Execute("alter table test rename column tm to time")
 	assert.Equal(t, nil, err)
 	// schema is cached, so tm still work even it renamed
 	res, err = conn.Execute("select open from test where sec=? and interval=? and tm=?", 1, 2, tm)

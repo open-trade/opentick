@@ -380,14 +380,23 @@ func DropTable(db fdb.Transactor, dbName string, tblName string) (err error) {
 	return
 }
 
-func RenameTableField(db fdb.Transactor, tbl *TableSchema, from string, to string) (err error) {
-	TableSchemaMap.Delete(tbl.DbName + "." + tbl.TblName)
+func RenameTable(db fdb.Transactor, tbl *TableSchema, colOldNewName []string, newTableName *string) (err error) {
 	// create new table schema to modify rather than modify older
 	tbl, err = GetTableSchema(db, tbl.DbName, tbl.TblName)
 	if err != nil {
 		return
 	}
 	TableSchemaMap.Delete(tbl.DbName + "." + tbl.TblName)
+	if newTableName != nil {
+		oldPathTable := []string{"db", tbl.DbName, tbl.TblName}
+		newPathTable := []string{"db", tbl.DbName, *newTableName}
+		_, err = directory.Move(db, oldPathTable, newPathTable)
+		tbl, err = GetTableSchema(db, tbl.DbName, tbl.TblName)
+		return
+	}
+	// rename col name below
+	from := colOldNewName[0]
+	to := colOldNewName[1]
 	_, dirSchema, err1 := openTable(db, tbl.DbName, tbl.TblName)
 	if err1 != nil {
 		return err1

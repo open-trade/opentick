@@ -8,7 +8,7 @@ import (
 
 var (
 	sqlLexer = lexer.Must(lexer.Regexp(`(\s+)` +
-		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|TO|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
+		`|(?P<Keyword>(?i)\b(TIMESTAMP|DATABASE|BOOLEAN|PRIMARY|SMALLINT|TINYINT|BIGINT|DOUBLE|SELECT|INSERT|VALUES|COLUMN|CREATE|DELETE|RENAME|FLOAT|WHERE|LIMIT|TABLE|ALTER|FALSE|TEXT|FROM|TYPE|DROP|TRUE|TO|INTO|ADD|AND|KEY|INT|IF|NOT|EXISTS)\b)` +
 		`|(?P<Func>(?i)\b(ADJ_PX|ADJ_VOL|ADJ)\b)` +
 		`|(?P<Ident>[_a-zA-Z][a-zA-Z0-9_]*)` +
 		`|(?P<Number>-?\d+\.?\d*([eE][-+]?\d+)?)` +
@@ -129,8 +129,8 @@ type AstAlterTableType struct {
 }
 
 type AstRename struct {
-	A *string `@Ident "TO"`
-	B *string `@Ident`
+	ColOldNewName []string `"COLUMN" @Ident "TO" @Ident`
+	NewTableName  *string  `| "TO" @Ident`
 }
 
 type AstSelectExpression struct {

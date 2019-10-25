@@ -366,7 +366,7 @@ func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selec
 		if funcName != nil {
 			tmp := strings.ToLower(*funcName)
 			funcName = &tmp
-			if tmp == "_adj_" {
+			if tmp == "adj" {
 				tmp = strings.ToLower(col.Name)
 				if strings.Contains(tmp, "qty") || strings.Contains(tmp, "vol") || strings.Contains(tmp, "size") {
 					tmp = "adj_vol"
@@ -499,7 +499,7 @@ func AlterTable(db fdb.Transactor, dbName string, ast *AstAlterTable) (err error
 		err = err2
 		return
 	}
-	return RenameTableField(db, schema, *ast.AlterTableType.Rename.A, *ast.AlterTableType.Rename.B)
+	return RenameTable(db, schema, ast.AlterTableType.Rename.ColOldNewName, ast.AlterTableType.Rename.NewTableName)
 }
 
 type deleteStmt struct {
