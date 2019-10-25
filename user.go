@@ -9,8 +9,9 @@ import (
 var userMap = sync.Map{}
 
 const (
-	ReadablePerm = 0
-	WritablePerm = 1
+	NoPerm       = 0
+	ReadablePerm = 1
+	WritablePerm = 2
 )
 
 type User struct {
@@ -21,10 +22,10 @@ type User struct {
 }
 
 func LoadUsers(db fdb.Transactor) (err error) {
-	if hasMeta, _ := HasDatabase(getDB(), "_meta_"); !hasMeta {
+	if hasMeta, _ := HasDatabase(db, "_meta_"); !hasMeta {
 		CreateDatabase(db, "_meta_")
 	}
-	_, err = Execute(db, "_meta_", "create table if not exists user(name text, password text, is_admin boolean, perm text, primary key(name)", nil)
+	_, err = Execute(db, "_meta_", "create table if not exists user(name text, password text, is_admin boolean, perm text, primary key(name))", nil)
 	if err != nil {
 		return
 	}
@@ -35,7 +36,7 @@ func LoadUsers(db fdb.Transactor) (err error) {
 		return true
 	})
 	for _, row := range res {
-		user := User{row[0].(string), row[1].(string), row[2].(bool), make(map[string]int)}
+		user := &User{row[0].(string), row[1].(string), row[2].(bool), make(map[string]int)}
 		strs := strings.Split(row[3].(string), ";")
 		if len(strs) > 0 {
 			for _, str := range strs {
