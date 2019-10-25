@@ -112,6 +112,8 @@ func Test_Query(t *testing.T) {
 	assert.Equal(t, nil, err1)
 	assert.Equal(t, 3, len(res))
 	assert.Equal(t, []interface{}{int64(2), int64(1), true, int64(39), 2.2, int64(105)}, res[0])
+	res, err1 = Execute(db, "", "select * from test.test", nil)
+	assert.Equal(t, 3, len(res))
 	res, err1 = Execute(db, "", "select * from test.test where a=2 and b=1 and b2=true limit -2", nil)
 	assert.Equal(t, nil, err1)
 	assert.Equal(t, 2, len(res))

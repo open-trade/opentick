@@ -52,6 +52,7 @@ func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurr
 			defaultDBs[i] = fdb.MustOpen(fdbClusterFile, []byte("DB"))
 		}
 	}
+	LoadUsers(getDB())
 	laddr, err1 := net.ResolveTCPAddr("tcp", addr)
 	if err1 != nil {
 		return err1

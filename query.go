@@ -217,6 +217,14 @@ func executeWhere(db fdb.Transactor, stmt whereStmt, args []interface{}) (res in
 	}
 	conds = stmt.GetConds()
 	schema := stmt.GetSchema()
+	if conds == nil {
+		kr := fdb.KeyRange{}
+		a, b := schema.Dir.FDBRangeKeys()
+		kr.Begin = a
+		kr.End = b
+		res = kr
+		return
+	}
 	if len(args) > 0 {
 		conds, err = validateConditionArgs(schema, conds, args)
 		if err != nil {
@@ -537,6 +545,9 @@ func (self *condition) IsRange() bool {
 }
 
 func resolveWhere(schema *TableSchema, where *AstExpression) (conds []condition, numPlaceholder int, err error) {
+	if where == nil {
+		return
+	}
 	conds = make([]condition, len(schema.Keys))
 	for _, cond := range where.And {
 		col, ok := schema.NameMap[*cond.LHS]
