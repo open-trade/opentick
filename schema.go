@@ -401,6 +401,7 @@ func RenameTable(db fdb.Transactor, tbl *TableSchema, colOldNewName []string, ne
 	if err1 != nil {
 		return err1
 	}
+	tbl = decodeTableSchema(tbl.encode()) //  modify copied to avoid thread issue
 	col, ok := tbl.NameMap[from]
 	if !ok {
 		return errors.New("Column " + from + " does not exist")
@@ -408,7 +409,7 @@ func RenameTable(db fdb.Transactor, tbl *TableSchema, colOldNewName []string, ne
 	if _, ok := tbl.NameMap[to]; ok {
 		return errors.New("Column " + to + " already exists")
 	}
-	col.Name = to // potential bug
+	col.Name = to
 	_, err = db.Transact(func(tr fdb.Transaction) (ret interface{}, err error) {
 		tr.Set(dirSchema, tbl.encode())
 		return

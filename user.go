@@ -1,6 +1,7 @@
 package opentick
 
 import (
+	"crypto/sha1"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type User struct {
 	password string
 	isAdmin  bool
 	perm     map[string]PermType
+	mutex    sync.Mutex
 }
 
 func LoadUsers(db fdb.Transactor) (err error) {
@@ -38,7 +40,7 @@ func LoadUsers(db fdb.Transactor) (err error) {
 		return true
 	})
 	for _, row := range res {
-		user := &User{row[0].(string), row[1].(string), row[2].(bool), make(map[string]PermType)}
+		user := &User{name: row[0].(string), password: row[1].(string), isAdmin: row[2].(bool), perm: make(map[string]PermType)}
 		strs := strings.Split(row[3].(string), ";")
 		if len(strs) > 0 {
 			for _, str := range strs {
@@ -78,4 +80,40 @@ func GetPerm(dbName string, tblName string, users ...*User) PermType {
 		return perm2
 	}
 	return perm1
+}
+
+func (user *User) Perm2Str() (res string) {
+	user.mutex.Lock()
+	defer user.mutex.Unlock()
+	if user.perm == nil {
+		return
+	}
+	var perms []string
+	for k, v := range user.perm {
+		tmp := k + "="
+		if v == WritablePerm {
+			tmp += "write"
+		} else {
+			tmp += "read"
+		}
+		perms = append(perms, tmp)
+	}
+	return strings.Join(perms, ";")
+}
+
+func (user *User) CheckPassword(password string) bool {
+	user.mutex.Lock()
+	defer user.mutex.Unlock()
+	return user.password == string(sha1.New().Sum([]byte(password)))
+}
+
+func (user *User) UpdatePasswd(db fdb.Transactor, newpasswd string) error {
+	_, err := Execute(db, "_meta_", "insert into user values(?, ?, ?, ?)", []interface{}{user.name, newpasswd, user.isAdmin, user.Perm2Str()})
+	if err != nil {
+		return err
+	}
+	user.mutex.Lock()
+	defer user.mutex.Unlock()
+	user.password = string(sha1.New().Sum([]byte(newpasswd)))
+	return nil
 }

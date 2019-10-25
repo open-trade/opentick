@@ -81,6 +81,7 @@ type connection struct {
 	mutex  sync.Mutex
 	cond   *sync.Cond
 	closed bool
+	user   *User
 }
 
 func (self *connection) Send(msg []byte) {
@@ -92,7 +93,10 @@ func handleConnection(conn net.Conn) {
 	atomic.AddInt32(&activeConns, 1)
 	log.Println("New connection from", conn.RemoteAddr(), ", active:", activeConns)
 	ch := make(chan []byte)
-	client := connection{ch: ch, conn: conn}
+	fromLocal := strings.Contains(conn.RemoteAddr().String(), "127.0.0.1:")
+	user := &User{}
+	user.isAdmin = fromLocal
+	client := connection{ch: ch, conn: conn, user: user}
 	client.cond = sync.NewCond(&client.mutex)
 	defer client.close()
 	go client.writeToConnection()
@@ -229,6 +233,7 @@ func (self *connection) process() {
 			}
 		}
 		unfinished++
+		user := self.user
 		self.mutex.Unlock()
 		go func() {
 			defer func() {
@@ -307,7 +312,7 @@ func (self *connection) process() {
 			}
 			if cmd == "run" {
 				if sql != "" {
-					res, err = Execute(getDB(), dbName, sql, args)
+					res, err = Execute(getDB(), dbName, sql, args, user)
 				} else {
 					res, err = ExecuteStmt(getDB(), stmt, args)
 				}
@@ -342,6 +347,59 @@ func (self *connection) process() {
 				if err != nil {
 					res = err.Error()
 				}
+			} else if cmd == "prepare" {
+				ast, err = Parse(sql)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				res, err = Resolve(getDB(), dbName, ast, user)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				mut.Lock()
+				prepared = append(prepared, res)
+				res = len(prepared) - 1
+				mut.Unlock()
+			} else if cmd == "login" || cmd == "use" {
+				if cmd == "login" {
+					toks = strings.Split(sql, " ")
+					if len(toks) < 2 || toks[0] == "" || toks[1] == "" {
+						res = "Both username and password required"
+						goto reply
+					}
+					res, _ = userMap.Load(toks[0])
+					if res == nil {
+						res = "Unknown username"
+						goto reply
+					}
+					if !res.(*User).CheckPassword(toks[1]) {
+						res = "Password mismatch"
+						goto reply
+					}
+					self.mutex.Lock()
+					self.user = res.(*User)
+					self.mutex.Unlock()
+					if len(toks) == 2 {
+						res = nil
+						goto reply
+					}
+					dbName = toks[2]
+				} else {
+					dbName = sql
+				}
+				exists, err = HasDatabase(getDB(), dbName)
+				if err != nil {
+					res = err.Error()
+					goto reply
+				}
+				if !exists {
+					res = dbName + " does not exist"
+				}
+				if GetPerm(dbName, "", user) == NoPerm {
+					res = "No permission"
+				}
 			} else if cmd == "meta" { // retrieve metadata
 				toks = strings.Split(sql, " ")
 				if len(toks) == 0 {
@@ -354,7 +412,6 @@ func (self *connection) process() {
 					if err != nil {
 						res = err.Error()
 					}
-					goto reply
 				case "list_tables":
 					if dbName == "" {
 						res = "Please select database first"
@@ -364,7 +421,6 @@ func (self *connection) process() {
 							res = err.Error()
 						}
 					}
-					goto reply
 				case "schema":
 					if len(toks) < 2 {
 						res = "Please specify table name"
@@ -382,33 +438,27 @@ func (self *connection) process() {
 						schema_res[1] = append(schema_res[1], []string{f.Name, f.Type.Name()})
 					}
 					res = schema_res
-					goto reply
-				}
-				res = "Invalid meta command"
-			} else if cmd == "prepare" {
-				ast, err = Parse(sql)
-				if err != nil {
-					res = err.Error()
-					goto reply
-				}
-				res, err = Resolve(getDB(), dbName, ast)
-				if err != nil {
-					res = err.Error()
-					goto reply
-				}
-				mut.Lock()
-				prepared = append(prepared, res)
-				res = len(prepared) - 1
-				mut.Unlock()
-			} else if cmd == "use" {
-				dbName = sql
-				exists, err = HasDatabase(getDB(), dbName)
-				if err != nil {
-					res = err.Error()
-					goto reply
-				}
-				if !exists {
-					res = dbName + " does not exist"
+				case "chgpasswd":
+					if len(toks) < 2 {
+						res = "Please specify new password"
+						goto reply
+					}
+					if user.name == "" {
+						res = "Not logged in"
+						goto reply
+					}
+					err = user.UpdatePasswd(getDB(), toks[1])
+					if err != nil {
+						res = err.Error()
+					}
+				case "reload_users":
+					if !user.isAdmin {
+						res = "No permission"
+					} else {
+						LoadUsers(getDB())
+					}
+				default:
+					res = "Invalid meta command"
 				}
 			} else {
 				res = "Invalid command " + cmd
