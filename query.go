@@ -13,13 +13,13 @@ import (
 	"time"
 )
 
-func Resolve(db fdb.Transactor, dbName string, ast *Ast) (stmt interface{}, err error) {
+func Resolve(db fdb.Transactor, dbName string, ast *Ast, user ...*User) (stmt interface{}, err error) {
 	if ast.Select != nil {
-		return resolveSelect(db, dbName, ast.Select)
+		return resolveSelect(db, dbName, ast.Select, user...)
 	} else if ast.Insert != nil {
-		return resolveInsert(db, dbName, ast.Insert)
+		return resolveInsert(db, dbName, ast.Insert, user...)
 	} else if ast.Delete != nil {
-		return resolveDelete(db, dbName, ast.Delete)
+		return resolveDelete(db, dbName, ast.Delete, user...)
 	}
 	err = errors.New("Only select/insert/delete can be resolved")
 	return
@@ -41,7 +41,7 @@ func ExecuteStmt(db fdb.Transactor, stmt interface{}, args []interface{}) (res [
 	return
 }
 
-func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (res [][]interface{}, err error) {
+func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}, user ...*User) (res [][]interface{}, err error) {
 	ast, err1 := Parse(sql)
 	if err1 != nil {
 		return nil, err1
@@ -49,6 +49,10 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 
 	if ast.Create != nil {
 		if ast.Create.Database != nil {
+			if len(user) > 0 && !user[0].isAdmin {
+				err = errors.New("No permisssion")
+				return
+			}
 			if ast.Create.Database.IfNotExists != nil {
 				exists, err1 := HasDatabase(db, *ast.Create.Database.Name)
 				if err1 != nil {
@@ -61,6 +65,10 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 			}
 			err = CreateDatabase(db, *ast.Create.Database.Name)
 		} else if ast.Create.Table != nil {
+			if GetPerm(dbName, "", user...) != WritablePerm {
+				err = errors.New("No permisssion")
+				return
+			}
 			if ast.Create.Table.IfNotExists != nil {
 				if dbName == "" {
 					dbName = ast.Create.Table.Name.DatabaseName()
@@ -78,11 +86,19 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 		}
 	} else if ast.Drop != nil {
 		if ast.Drop.Database != nil {
+			if len(user) > 0 && !user[0].isAdmin {
+				err = errors.New("No permisssion")
+				return
+			}
 			err = DropDatabase(db, *ast.Drop.Database)
 			adjCache.clear(*ast.Drop.Database)
 		} else if ast.Drop.Table != nil {
 			if dbName == "" {
 				dbName = ast.Drop.Table.DatabaseName()
+			}
+			if GetPerm(dbName, ast.Drop.Table.TableName(), user...) != WritablePerm {
+				err = errors.New("No permisssion")
+				return
 			}
 			if ast.Drop.Table.TableName() == "_adj_" {
 				adjCache.clear(dbName)
@@ -90,9 +106,9 @@ func Execute(db fdb.Transactor, dbName string, sql string, args []interface{}) (
 			err = DropTable(db, dbName, ast.Drop.Table.TableName())
 		}
 	} else if ast.AlterTable != nil {
-		err = AlterTable(db, dbName, ast.AlterTable)
+		err = AlterTable(db, dbName, ast.AlterTable, user...)
 	} else {
-		stmt, err1 := Resolve(db, dbName, ast)
+		stmt, err1 := Resolve(db, dbName, ast, user...)
 		if err1 != nil {
 			err = err1
 			return
@@ -326,10 +342,14 @@ func executeInsert(db fdb.Transactor, stmt *insertStmt, args []interface{}) (err
 	return BatchInsert(db, stmt, argsArray[:])
 }
 
-func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect) (stmt selectStmt, err error) {
+func resolveSelect(db fdb.Transactor, dbName string, ast *AstSelect, user ...*User) (stmt selectStmt, err error) {
 	stmt.Schema, err = getTableSchema(db, dbName, ast.Table)
 	schema := stmt.Schema
 	if err != nil {
+		return
+	}
+	if GetPerm(schema.DbName, schema.TblName, user...) == NoPerm {
+		err = errors.New("No permisssion")
 		return
 	}
 	stmt.Conds, stmt.NumPlaceholders, err = resolveWhere(stmt.Schema, ast.Where)
@@ -436,10 +456,14 @@ func (self *selectStmt) GetSchema() *TableSchema {
 	return self.Schema
 }
 
-func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert) (stmt insertStmt, err error) {
+func resolveInsert(db fdb.Transactor, dbName string, ast *AstInsert, user ...*User) (stmt insertStmt, err error) {
 	stmt.Schema, err = getTableSchema(db, dbName, ast.Table)
 	schema := stmt.Schema
 	if err != nil {
+		return
+	}
+	if GetPerm(schema.DbName, schema.TblName, user...) != WritablePerm {
+		err = errors.New("No permisssion")
 		return
 	}
 	if ast.Cols == nil {
@@ -492,19 +516,27 @@ type insertStmt struct {
 	NumPlaceholders int
 }
 
-func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete) (stmt deleteStmt, err error) {
+func resolveDelete(db fdb.Transactor, dbName string, ast *AstDelete, user ...*User) (stmt deleteStmt, err error) {
 	stmt.Schema, err = getTableSchema(db, dbName, ast.Table)
 	if err != nil {
+		return
+	}
+	if GetPerm(stmt.Schema.DbName, stmt.Schema.TblName, user...) != WritablePerm {
+		err = errors.New("No permisssion")
 		return
 	}
 	stmt.Conds, stmt.NumPlaceholders, err = resolveWhere(stmt.Schema, ast.Where)
 	return
 }
 
-func AlterTable(db fdb.Transactor, dbName string, ast *AstAlterTable) (err error) {
+func AlterTable(db fdb.Transactor, dbName string, ast *AstAlterTable, user ...*User) (err error) {
 	schema, err2 := getTableSchema(db, dbName, ast.Table)
 	if err2 != nil {
 		err = err2
+		return
+	}
+	if GetPerm(schema.DbName, schema.TblName, user...) != WritablePerm {
+		err = errors.New("No permisssion")
 		return
 	}
 	return RenameTable(db, schema, ast.AlterTableType.Rename.ColOldNewName, ast.AlterTableType.Rename.NewTableName)
@@ -759,8 +791,9 @@ hasError:
 }
 
 func getTableSchema(db fdb.Transactor, dbName string, table *AstTableName) (schema *TableSchema, err error) {
-	if dbName == "" {
-		dbName = table.DatabaseName()
+	tmp := table.DatabaseName()
+	if dbName == "" || tmp != "" {
+		dbName = tmp
 	}
 	if dbName == "" {
 		err = errors.New("No database name has been specified. USE a database name, or explicitly specify databasename.tablename")
