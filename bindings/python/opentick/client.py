@@ -3,6 +3,7 @@
 
 import datetime
 import sys
+import hashlib
 import socket
 import struct
 from six.moves import xrange
@@ -41,19 +42,47 @@ class _PleaseReconnect(Exception):
   pass
 
 
+def connect(addr='localhost',
+            port=None,
+            db_name=None,
+            username=None,
+            password=None,
+            timeout=15):
+  conn = Connection(addr, port, db_name, username, password, timeout)
+  conn.start()
+  return conn
+
+
 class Connection(threading.Thread):
 
-  def __init__(self, addr, port=None, db_name=None, timeout=15):
+  def __init__(self,
+               addr,
+               port=None,
+               db_name=None,
+               username=None,
+               password=None,
+               timeout=15):
     threading.Thread.__init__(self)
-    # host:port@db_name
-    toks = addr.split('@')
-    if db_name is None and len(toks) == 2: db_name = toks[1]
-    toks = toks[0].split(':')
+    # user_name:password@host:port/db_name
+    toks = addr.split('/')
+    if db_name is None and len(toks) > 1: db_name = toks[1]
+    toks = toks[0].split('@')
+    if len(toks) > 1:
+      user_pass = toks[0]
+      addr = toks[1]
+      toks = user_pass.split(':')
+      if password is None and len(toks) > 1: password = toks[1] or password
+      if username is None: username = toks[0]
+    else:
+      addr = toks[0]
+    toks = addr.split(':')
     host = toks[0]
-    port = int(toks[1]) if len(toks) == 2 else 1116
+    if port is None and len(toks) > 1: port = int(toks[1])
     self.__addr = host
-    self.__port = port
+    self.__port = port or 1116
     self.__db_name = db_name
+    self.__username = username
+    self.__password = password
     self.__sock = None
     self.__prepared = {}
     self.__auto_reconnect = 1
@@ -81,38 +110,81 @@ class Connection(threading.Thread):
   def set_auto_reconnect(self, interval):
     self.__auto_reconnect = interval
 
+  def login(self, username, password, db_name=None, wait=True):
+    self.__username = username
+    self.__password = password
+    args = [username, password]
+    if db_name: args.append(db_name)
+    return self.__send_cmd('login', ' '.join(args), wait)
+
+  def delete_user(self, username):
+    self.execute('delete from _meta_.user where name=\'' + username + '\'')
+    self.reload_users()
+
+  def create_user(self, username, password):
+    assert (username and password)
+    res = self.execute('select * from _meta_.user where name=\'' + username +
+                       '\'')
+    if res and res[0]:
+      raise Error('User already exist')
+    h = hashlib.sha1()
+    h.update(six.b(password))
+    print(h.hexdigest())
+    self.execute("insert into _meta_.user values('%s', '%s', false, '')" %
+                 (username, h.hexdigest()))
+    self.reload_users()
+
+  def list_users(self):
+    return self.execute('select * from _meta_.user')
+
+  def update_user(self, username, perm=None, is_admin=None):
+    res = self.execute('select * from _meta_.user where name=\'' + username +
+                       '\'')
+    if not res or not res[0]:
+      raise Error('User not exist')
+    if perm is not None:
+      if isinstance(perm, str):
+        res[0][-1] = perm
+      elif isinstance(perm, dict):
+        orig = dict([
+            x for x in [x.split('=') for x in res[0][-1].split(';')]
+            if len(x) == 2
+        ])
+        for k, v in perm.items():
+          if v is None:
+            if k in orig: del orig[k]
+          elif v in ('write', 'read'):
+            orig[k] = v
+          else:
+            raise ('Invalid perm type: ' + str(v))
+        res[0][-1] = ';'.join(['%s=%s' % (a, b) for a, b in orig.items()])
+    if is_admin is not None: res[0][-2] = is_admin
+    self.execute('insert into _meta_.user values(?, ?, ?, ?)', res[0])
+    self.reload_users()
+
+  def reload_users(self):
+    self.__send_cmd('meta', 'reload_users')
+
+  def chgpasswd(self, password, wait=True):
+    assert (password)
+    return self.__send_cmd('meta', 'chgpasswd ' + password, wait)
+
   def use(self, db_name, wait=True):
-    ticket = self.__get_ticket()
-    cmd = {'0': ticket, '1': 'use', '2': db_name}
-    self.__send(cmd)
-    if not wait: return
-    try:
-      Future(ticket, self).get(self.__default_timeout)
-    except Error as e:
-      raise e
+    return self.__send_cmd('use', db_name, wait)
 
   def list_databases(self):
-    ticket = self.__get_ticket()
-    cmd = {'0': ticket, '1': 'meta', '2': 'list_databases'}
-    self.__send(cmd)
-    try:
-      return Future(ticket, self).get(self.__default_timeout)
-    except Error as e:
-      raise e
+    return self.__send_cmd('meta', 'list_databases')
 
   def list_tables(self):
-    ticket = self.__get_ticket()
-    cmd = {'0': ticket, '1': 'meta', '2': 'list_tables'}
-    self.__send(cmd)
-    try:
-      return Future(ticket, self).get(self.__default_timeout)
-    except Error as e:
-      raise e
+    return self.__send_cmd('meta', 'list_tables')
 
   def schema(self, table_name):
+    return self.__send_cmd('meta', 'schema ' + table_name)
+
+  def __send_cmd(self, cmd, arg, wait=True):
     ticket = self.__get_ticket()
-    cmd = {'0': ticket, '1': 'meta', '2': 'schema ' + table_name}
-    self.__send(cmd)
+    self.__send({'0': ticket, '1': cmd, '2': arg})
+    if not wait: return Future(ticket, self)
     try:
       return Future(ticket, self).get(self.__default_timeout)
     except Error as e:
@@ -197,7 +269,9 @@ class Connection(threading.Thread):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeval)
     logging.info('OpenTick: connected')
     self.__connected = True
-    if self.__db_name:
+    if self.__username:
+      self.login(self.__username, self.__password, self.__db_name, sync)
+    elif self.__db_name:
       self.use(self.__db_name, sync)
 
   def __execute_ranges_async(self, sql, args):

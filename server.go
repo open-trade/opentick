@@ -212,8 +212,7 @@ func (c *connection) writeToConnection() {
 
 func (self *connection) process() {
 	var prepared []interface{}
-	var mut sync.Mutex
-	var dbName string
+	var usedDbName string
 	var useJson bool
 	var unfinished int32
 	for {
@@ -234,6 +233,7 @@ func (self *connection) process() {
 		}
 		unfinished++
 		user := self.user
+		dbName := usedDbName
 		self.mutex.Unlock()
 		go func() {
 			defer func() {
@@ -298,14 +298,14 @@ func (self *connection) process() {
 					res = fmt.Sprint("Invalid sql, expected string or int (prepared id), got ", data["2"])
 					goto reply
 				}
-				mut.Lock()
+				self.mutex.Lock()
 				if preparedId >= len(prepared) {
-					mut.Unlock()
+					self.mutex.Unlock()
 					res = fmt.Sprint("Invalid preparedId ", preparedId)
 					goto reply
 				}
 				stmt = prepared[preparedId]
-				mut.Unlock()
+				self.mutex.Unlock()
 			} else if sql == "" {
 				res = "Empty sql"
 				goto reply
@@ -358,10 +358,10 @@ func (self *connection) process() {
 					res = err.Error()
 					goto reply
 				}
-				mut.Lock()
+				self.mutex.Lock()
 				prepared = append(prepared, res)
 				res = len(prepared) - 1
-				mut.Unlock()
+				self.mutex.Unlock()
 			} else if cmd == "login" || cmd == "use" {
 				if cmd == "login" {
 					toks = strings.Split(sql, " ")
@@ -380,15 +380,18 @@ func (self *connection) process() {
 					}
 					self.mutex.Lock()
 					self.user = res.(*User)
+					user = self.user
 					self.mutex.Unlock()
 					if len(toks) == 2 {
 						res = nil
 						goto reply
 					}
-					dbName = toks[2]
-				} else {
-					dbName = sql
+					sql = toks[2]
 				}
+				self.mutex.Lock()
+				usedDbName = sql
+				dbName = usedDbName
+				self.mutex.Unlock()
 				exists, err = HasDatabase(getDB(), dbName)
 				if err != nil {
 					res = err.Error()

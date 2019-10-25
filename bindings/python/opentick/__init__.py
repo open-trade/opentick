@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 '''Initialize the opentick package.'''
 
-from .client import split_range, Future, Connection, Error
+from .client import connect, split_range, Future, Connection, Error
 
 __all__ = [
     'split_range',
@@ -10,4 +10,4 @@ __all__ = [
     'Error',
 ]
 
-__version__ = '1.0.5'
+__version__ = '1.1.0'
