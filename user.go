@@ -24,7 +24,6 @@ type User struct {
 	password string
 	isAdmin  bool
 	perm     map[string]PermType
-	mutex    sync.Mutex
 }
 
 func LoadUsers(db fdb.Transactor) (err error) {
@@ -66,8 +65,6 @@ func GetPerm(dbName string, tblName string, users ...*User) PermType {
 		return WritablePerm
 	}
 	user := users[0]
-	user.mutex.Lock()
-	defer user.mutex.Unlock()
 	if user.isAdmin {
 		return WritablePerm
 	}
@@ -86,8 +83,6 @@ func GetPerm(dbName string, tblName string, users ...*User) PermType {
 }
 
 func (user *User) Perm2Str() (res string) {
-	user.mutex.Lock()
-	defer user.mutex.Unlock()
 	if user.perm == nil {
 		return
 	}
@@ -105,19 +100,17 @@ func (user *User) Perm2Str() (res string) {
 }
 
 func (user *User) CheckPassword(password string) bool {
-	user.mutex.Lock()
-	defer user.mutex.Unlock()
 	return user.password == sha1String(password)
 }
 
-func (user *User) UpdatePasswd(db fdb.Transactor, newpasswd string) error {
+func (user User) UpdatePasswd(db fdb.Transactor, newpasswd string) error {
 	_, err := Execute(db, "_meta_", "insert into user values(?, ?, ?, ?)", []interface{}{user.name, newpasswd, user.isAdmin, user.Perm2Str()})
 	if err != nil {
 		return err
 	}
-	user.mutex.Lock()
-	defer user.mutex.Unlock()
 	user.password = sha1String(newpasswd)
+	userMap.Delete(user.name)
+	userMap.Store(user.name, &user)
 	return nil
 }
 
