@@ -2,12 +2,14 @@
 #define OPENTICK_CONNECTION_H_
 
 #include <atomic>
+#include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/use_future.hpp>
-#include <future>
+#include <boost/endian/conversion.hpp>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <future>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -17,7 +19,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include "boost/endian/conversion.hpp"
 
 #include "json.hpp"
 
@@ -45,6 +46,20 @@ struct Logger {
   virtual void Error(const std::string& msg) noexcept { LOG(msg); }
 };
 
+static inline decltype(auto) Split(const std::string& str, const char* sep,
+                                   bool compact = true,
+                                   bool remove_empty = true) {
+  std::vector<std::string> out;
+  boost::split(out, str, boost::is_any_of(sep),
+               compact ? boost::token_compress_on : boost::token_compress_off);
+  if (remove_empty) {
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [](auto x) { return x.empty(); }),
+              out.end());
+  }
+  return out;
+}
+
 typedef system_clock::time_point Tm;
 typedef std::variant<std::int64_t, std::uint64_t, std::int32_t, std::uint32_t,
                      bool, float, double, std::nullptr_t, std::string, Tm>
@@ -65,6 +80,8 @@ class Connection : public std::enable_shared_from_this<Connection> {
   typedef std::shared_ptr<Connection> Ptr;
   std::string Start() noexcept;
   bool IsConnected() const noexcept { return 1 == connected_; }
+  void Login(const std::string& username, const std::string& password,
+             const std::string& dbName = "", bool wait = true);
   void Use(const std::string& dbName, bool wait = true);
   Future ExecuteAsync(const std::string& sql, const Args& args = {},
                       Callback callback = {});
@@ -76,14 +93,19 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void SetLogger(Logger::Ptr logger) noexcept { logger_ = logger; }
   void SetAutoReconnect(int interval) noexcept { auto_reconnect_ = interval; }
 
-  static inline Connection::Ptr Create(const std::string& addr, int port,
+  // add can be host or url like user_name:password@host:port/db_name
+  static inline Connection::Ptr Create(const std::string& addr, int port = 0,
                                        const std::string& db_name = "",
+                                       const std::string& username = "",
+                                       const std::string& password = "",
                                        int timeout = 15) {
-    return Connection::Ptr(new Connection(addr, port, db_name, timeout));
+    return Connection::Ptr(
+        new Connection(addr, port, db_name, username, password, timeout));
   }
 
  protected:
   Connection(const std::string& addr, int port, const std::string& dbname,
+             const std::string& username, const std::string& password,
              int timeout);
   void ReadHead();
   void ReadBody(unsigned len);
@@ -99,6 +121,8 @@ class Connection : public std::enable_shared_from_this<Connection> {
   std::string ip_;
   int port_ = 0;
   std::string default_use_;
+  std::string username_;
+  std::string password_;
   int default_timeout_ = 0;
   std::vector<std::uint8_t> msg_in_buf_;
   std::vector<std::uint8_t> msg_out_buf_;
@@ -135,16 +159,38 @@ struct FutureImpl : public AbstractFuture {
   Connection::Ptr conn;
 };
 
-inline Connection::Connection(const std::string& ip, int port,
-                              const std::string& dbname, int timeout)
-    : ip_(ip),
+inline Connection::Connection(const std::string& addr, int port,
+                              const std::string& dbname,
+                              const std::string& username,
+                              const std::string& password, int timeout)
+    : ip_(addr),
       port_(port),
       default_use_(dbname),
+      username_(username),
+      password_(password),
       default_timeout_(timeout),
       worker_(io_service_),
       socket_(io_service_),
       thread_([this]() { io_service_.run(); }),
-      logger_(new Logger) {}
+      logger_(new Logger) {
+  auto toks = Split(addr, "/");
+  if (dbname.empty() && toks.size() > 1) {
+    default_use_ = toks[1];
+  }
+  toks = Split(toks[0], "@");
+  if (toks.size() > 1) {
+    ip_ = toks[1];
+    toks = Split(toks[0], ":");
+    if (password.empty() && toks.size() > 1) password_ = toks[1];
+    if (username.empty()) username_ = toks[0];
+  } else {
+    ip_ = toks[0];
+  }
+  toks = Split(ip_, ":");
+  ip_ = toks[0];
+  if (port <= 0 && toks.size() > 1) port_ = atoi(toks[1].c_str());
+  if (port_ <= 0) port_ = 1116;
+}
 
 inline std::string Connection::Start() noexcept {
   if (connected_) return {};
@@ -179,7 +225,10 @@ inline void Connection::AfterConnected(bool sync) {
   socket_.set_option(option);
   connected_ = 1;
   ReadHead();
-  if (default_use_.size()) Use(default_use_, sync);
+  if (username_.size())
+    Login(username_, password_, default_use_, sync);
+  else if (default_use_.size())
+    Use(default_use_, sync);
   logger_->Info("OpenTick: Connected");
 }
 
@@ -228,7 +277,25 @@ inline void Connection::Close() {
   });
 }
 
+inline void Connection::Login(const std::string& username,
+                              const std::string& password,
+                              const std::string& dbName, bool wait) {
+  // username_/password_/default_use_ not thread safe
+  username_ = username;
+  password_ = password;
+  auto arg = username_ + " " + password_;
+  if (dbName.size()) {
+    default_use_ = dbName;
+    arg += " " + dbName;
+  }
+  auto ticket = ++ticket_counter_;
+  Send(json::to_bson(json{{"0", ticket}, {"1", "login"}, {"2", arg}}));
+  if (wait) FutureImpl(ticket, shared_from_this()).Get(default_timeout_);
+}
+
 inline void Connection::Use(const std::string& dbName, bool wait) {
+  // default_use_ not thread safe
+  default_use_ = dbName;
   auto ticket = ++ticket_counter_;
   Send(json::to_bson(json{{"0", ticket}, {"1", "use"}, {"2", dbName}}));
   if (wait) FutureImpl(ticket, shared_from_this()).Get(default_timeout_);

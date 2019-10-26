@@ -42,6 +42,7 @@ class _PleaseReconnect(Exception):
   pass
 
 
+# add can be host or url like user_name:password@host:port/db_name
 def connect(addr='localhost',
             port=None,
             db_name=None,
@@ -63,15 +64,13 @@ class Connection(threading.Thread):
                password=None,
                timeout=15):
     threading.Thread.__init__(self)
-    # user_name:password@host:port/db_name
     toks = addr.split('/')
     if db_name is None and len(toks) > 1: db_name = toks[1]
     toks = toks[0].split('@')
     if len(toks) > 1:
-      user_pass = toks[0]
       addr = toks[1]
-      toks = user_pass.split(':')
-      if password is None and len(toks) > 1: password = toks[1] or password
+      toks = toks[0].split(':')
+      if password is None and len(toks) > 1: password = toks[1]
       if username is None: username = toks[0]
     else:
       addr = toks[0]
@@ -111,10 +110,13 @@ class Connection(threading.Thread):
     self.__auto_reconnect = interval
 
   def login(self, username, password, db_name=None, wait=True):
+    # __username/__password/__db_name not thread safe
     self.__username = username
     self.__password = password
     args = [username, password]
-    if db_name: args.append(db_name)
+    if db_name:
+      self.__db_name = db_name
+      args.append(db_name)
     return self.__send_cmd('login', ' '.join(args), wait)
 
   def delete_user(self, username):
@@ -170,6 +172,8 @@ class Connection(threading.Thread):
     return self.__send_cmd('meta', 'chgpasswd ' + password, wait)
 
   def use(self, db_name, wait=True):
+    # __db_name not thread safe
+    self.__db_name = db_name
     return self.__send_cmd('use', db_name, wait)
 
   def list_databases(self):
