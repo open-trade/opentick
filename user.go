@@ -109,7 +109,6 @@ func (user User) UpdatePasswd(db fdb.Transactor, newpasswd string) error {
 		return err
 	}
 	user.password = sha1String(newpasswd)
-	userMap.Delete(user.name)
 	userMap.Store(user.name, &user)
 	return nil
 }
