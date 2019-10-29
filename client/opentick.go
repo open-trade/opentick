@@ -348,7 +348,7 @@ func (self *connection) ExecuteAsync(sql string, args ...interface{}) (ret Futur
 		}
 	}
 	ticket := self.getTicket()
-	cmd = map[string]interface{}{"0": ticket, "1": "run", "2": sql, "3": args}
+	cmd = map[string]interface{}{"0": ticket, "1": "run", "2": sql, "3": args, "4": 1}
 	if prepared >= 0 {
 		cmd["2"] = prepared
 	}
@@ -450,6 +450,16 @@ func recv(c *connection) {
 		if err != nil {
 			c.notify(-1, err)
 			return
+		}
+		if cached, ok := data["2"]; ok {
+			var cacheData map[string]interface{}
+			err = bson.Unmarshal(cached.([]byte), &cacheData)
+			if err != nil {
+				c.notify(-1, err)
+				return
+			}
+			data["1"] = cacheData["1"]
+			delete(data, "2")
 		}
 		c.notify(data["0"].(int), data)
 	}

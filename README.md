@@ -10,6 +10,8 @@ OpenTick is a fast tick database for financial timeseries data, built on [Founda
 * Python, C++ and Go SDK
 * Both sync and async query
 * Implicit SQL statement prepare
+* Permission 
+* Cache
 
 # Installation on Ubuntu
 

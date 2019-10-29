@@ -199,25 +199,26 @@ class Connection(threading.Thread):
     self.__close_socket()
     self.join()
 
-  def execute(self, sql, args=[]):
+  def execute(self, sql, args=[], cache=True):
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql,
-                                             args).get(self.__default_timeout)
-    return self.execute_async(sql, args).get(self.__default_timeout)
+          return self.__execute_ranges_async(sql, args,
+                                             cache).get(self.__default_timeout)
+    return self.execute_async(sql, args, cache).get(self.__default_timeout)
 
-  def execute_async(self, sql, args=[]):
+  def execute_async(self, sql, args=[], cache=True):
     prepared = None
     if len(args) > 0:
       if isinstance(args[-1], tuple) or isinstance(args[-1], list):
         if isinstance(args[-1][0], tuple) or isinstance(args[-1][0], list):
-          return self.__execute_ranges_async(sql, args)
+          return self.__execute_ranges_async(sql, args, cache)
       args = list(args)
       self.__convert_timestamp(args)
       prepared = self.__prepare(sql)
     ticket = self.__get_ticket()
     cmd = {'0': ticket, '1': 'run', '2': sql, '3': args}
+    if cache: cmd['4'] = 1
     if prepared != None:
       cmd['2'] = prepared
     self.__send(cmd)
@@ -278,12 +279,12 @@ class Connection(threading.Thread):
     elif self.__db_name:
       self.use(self.__db_name, sync)
 
-  def __execute_ranges_async(self, sql, args):
+  def __execute_ranges_async(self, sql, args, cache=True):
     ranges = args[-1]
     futs = []
     for r in ranges:
       args2 = list(args[:-1]) + r
-      futs.append(self.execute_async(sql, args2))
+      futs.append(self.execute_async(sql, args2, cache))
     return Futures(futs)
 
   def __convert_timestamp(self, args):
@@ -365,6 +366,10 @@ class Connection(threading.Thread):
             raise _PleaseReconnect()
           continue
         msg = BSON(body).decode()
+        cached = msg.get('2')
+        if cached is not None:
+          msg['1'] = BSON(cached).decode()['1']
+          del msg['2']
         self.__notify(msg['0'], msg)
       except _PleaseReconnect as e:
         if self.__auto_reconnect < 1: return

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/patrickmn/go-cache"
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"math"
@@ -23,12 +24,17 @@ var sNumDatabaseConn = 1
 var sMaxConcurrency = 100
 var sTimeout = 0
 var activeConns int32
+var respCache *cache.Cache
 
 func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency, timeout int) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency, timeout int, cacheExpiration float64) error {
+	if cacheExpiration > 0 {
+		log.Println("cache enabled with expiration:", cacheExpiration, "seconds")
+		respCache = cache.New(time.Duration(1000*cacheExpiration)*time.Millisecond, time.Duration(1000*cacheExpiration)*time.Millisecond)
+	}
 	log.SetOutput(os.Stdout)
 	fdb.MustAPIVersion(FdbVersion)
 	if numDatabaseConn > sNumDatabaseConn {
@@ -161,7 +167,7 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func reply(ticket int, res interface{}, ch chan []byte, useJson bool) {
+func reply(cacheKey string, ticket int, res interface{}, ch chan []byte, useJson bool) {
 	defer func() {
 		if err := recover(); err != nil {
 			// send on closed channel
@@ -169,18 +175,25 @@ func reply(ticket int, res interface{}, ch chan []byte, useJson bool) {
 	}()
 	var data []byte
 	var err error
+	key := "1"
+	if _, ok := res.([]byte); ok {
+		key = "2"
+	}
 	if useJson {
-		data, err = json.Marshal(map[string]interface{}{"0": ticket, "1": res})
+		data, err = json.Marshal(map[string]interface{}{"0": ticket, key: res})
 	} else {
-		data, err = bson.Marshal(map[string]interface{}{"0": ticket, "1": res})
+		data, err = bson.Marshal(map[string]interface{}{"0": ticket, key: res})
 	}
 	if err != nil {
-		reply(ticket, "Internal error: "+err.Error(), ch, useJson)
+		reply("", ticket, "Internal error: "+err.Error(), ch, useJson)
 		return
 	}
 	if len(data) > math.MaxUint32 {
-		reply(ticket, "Results too large", ch, useJson)
+		reply("", ticket, "Results too large", ch, useJson)
 		return
+	}
+	if cacheKey != "" {
+		respCache.SetDefault(cacheKey, data)
 	}
 	var size [4]byte
 	binary.LittleEndian.PutUint32(size[:], uint32(len(data)))
@@ -211,7 +224,7 @@ func (c *connection) writeToConnection() {
 }
 
 func (self *connection) process() {
-	var prepared []interface{}
+	var prepared [][2]interface{}
 	var usedDbName string
 	var useJson bool
 	var unfinished int32
@@ -246,6 +259,7 @@ func (self *connection) process() {
 			var err error
 			var ok bool
 			var ticket int
+			var cacheKey string
 			var cmd string
 			var sql string
 			var preparedId int
@@ -255,6 +269,8 @@ func (self *connection) process() {
 			var toks []string
 			var exists bool
 			var stmt interface{}
+			var cachedSql string
+			var useCache int
 			var schema *TableSchema
 			var schema_res [2][]interface{}
 			if useJson {
@@ -304,16 +320,28 @@ func (self *connection) process() {
 					res = fmt.Sprint("Invalid preparedId ", preparedId)
 					goto reply
 				}
-				stmt = prepared[preparedId]
+				stmt = prepared[preparedId][0]
+				cachedSql = prepared[preparedId][1].(string)
 				self.mutex.Unlock()
 			} else if sql == "" {
 				res = "Empty sql"
 				goto reply
 			}
+			useCache, _ = data["4"].(int)
 			if cmd == "run" {
-				if sql != "" {
+				if stmt == nil {
 					res, err = Execute(getDB(), dbName, sql, args, user)
 				} else {
+					if respCache != nil && useCache > 0 {
+						if _, ok2 := stmt.(selectStmt); ok2 {
+							cacheKey = cachedSql + " " + fmt.Sprint(args) + " " + fmt.Sprint(useJson)
+							if cached, ok3 := respCache.Get(cacheKey); ok3 {
+								res = cached
+								cacheKey = ""
+								goto reply
+							}
+						}
+					}
 					res, err = ExecuteStmt(getDB(), stmt, args)
 				}
 				if err != nil {
@@ -359,7 +387,7 @@ func (self *connection) process() {
 					goto reply
 				}
 				self.mutex.Lock()
-				prepared = append(prepared, res)
+				prepared = append(prepared, [2]interface{}{res, sql})
 				res = len(prepared) - 1
 				self.mutex.Unlock()
 			} else if cmd == "login" || cmd == "use" {
@@ -467,7 +495,7 @@ func (self *connection) process() {
 				res = "Invalid command " + cmd
 			}
 		reply:
-			reply(ticket, res, self.ch, useJson)
+			reply(cacheKey, ticket, res, self.ch, useJson)
 		}()
 	}
 }
