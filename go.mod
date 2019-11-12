@@ -3,7 +3,6 @@ module github.com/opentradesolutions/opentick
 require (
 	github.com/alecthomas/participle v0.3.0
 	github.com/alecthomas/repr v0.0.0-20180818092828-117648cd9897
-	github.com/apple/foundationdb v0.0.0-20190724023245-90ba203c166c
 	github.com/apple/foundationdb/bindings/go v0.0.0-20191111230310-cf2ec3418c54
 	github.com/k0kubun/pp v2.3.0+incompatible // indirect
 	github.com/kr/pretty v0.1.0 // indirect
