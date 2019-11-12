@@ -18,8 +18,8 @@ var (
 	sqlParser = participle.MustBuild(
 		&Ast{},
 		participle.Lexer(sqlLexer),
-		participle.Unquote(sqlLexer, "String"),
-		participle.Upper(sqlLexer, "Keyword", "Func"),
+		participle.Unquote("String"),
+		participle.Upper("Keyword", "Func"),
 	)
 )
 
