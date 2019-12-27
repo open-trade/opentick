@@ -25,12 +25,15 @@ var sMaxConcurrency = 100
 var sTimeout = 0
 var activeConns int32
 var respCache *cache.Cache
+var sPermissionControl bool
 
 func getDB() fdb.Transactor {
 	return defaultDBs[rand.Intn(sNumDatabaseConn)]
 }
 
-func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency, timeout int, cacheExpiration float64) error {
+func StartServer(addr string, fdbClusterFile string, numDatabaseConn, maxConcurrency, timeout int, cacheExpiration float64, permission bool) error {
+	sPermissionControl = permission
+	log.Print("Permission control: ", permission)
 	if cacheExpiration > 0 {
 		log.Println("cache enabled with expiration:", cacheExpiration, "seconds")
 		respCache = cache.New(time.Duration(1000*cacheExpiration)*time.Millisecond, time.Duration(1000*cacheExpiration)*time.Millisecond)
@@ -99,9 +102,12 @@ func handleConnection(conn net.Conn) {
 	atomic.AddInt32(&activeConns, 1)
 	log.Println("New connection from", conn.RemoteAddr(), ", active:", activeConns)
 	ch := make(chan []byte)
-	fromLocal := strings.Contains(conn.RemoteAddr().String(), "127.0.0.1:")
 	user := &User{}
-	user.isAdmin = fromLocal
+	user.isAdmin = !sPermissionControl
+	if !user.isAdmin {
+		fromLocal := strings.Contains(conn.RemoteAddr().String(), "127.0.0.1:")
+		user.isAdmin = fromLocal
+	}
 	client := connection{ch: ch, conn: conn, user: user}
 	client.cond = sync.NewCond(&client.mutex)
 	defer client.close()

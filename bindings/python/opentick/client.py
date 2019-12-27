@@ -139,6 +139,8 @@ class Connection(threading.Thread):
   def list_users(self):
     return self.execute('select * from _meta_.user')
 
+  # perm dict example: { 'db1': 'write', 'db2': 'read', 'db2.table1': 'write' }
+  # perm str example: db1=write;db2=read;db2.table1=write
   def update_user(self, username, perm=None, is_admin=None):
     res = self.execute('select * from _meta_.user where name=\'' + username +
                        '\'')

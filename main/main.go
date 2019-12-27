@@ -12,6 +12,7 @@ var n1 = flag.Int("num_foundation_db_connections", 1, "number of connections to 
 var n2 = flag.Int("max_concurrency", 100, "max concurrency of one connection, too big concurrency may cause performance degradation")
 var n3 = flag.Int("timeout", 30, "client connection timeout in seconds, heartbeat applied")
 var n4 = flag.Float64("cache", 0, "cache expiration time in seconds, 0 means no cache")
+var n5 = flag.Bool("permission_control", false, "turn on/off permission control")
 
 func main() {
 	// CPU profiling by default
@@ -19,7 +20,7 @@ func main() {
 	// defer profile.Start(profile.MemProfile).Stop()
 	// go tool pprof --pdf ~/go/bin/yourbinary /var/path/to/cpu.pprof > file.pdf
 	flag.Parse()
-	err := opentick.StartServer(*addr, *fdbClusterFile, *n1, *n2, *n3, *n4)
+	err := opentick.StartServer(*addr, *fdbClusterFile, *n1, *n2, *n3, *n4, *n5)
 	if err != nil {
 		panic(err)
 	}
