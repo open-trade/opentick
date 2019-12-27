@@ -1,9 +1,9 @@
 module github.com/opentradesolutions/opentick
 
 require (
-	github.com/alecthomas/participle v0.4.0
+	github.com/alecthomas/participle v0.4.1
 	github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1
-	github.com/apple/foundationdb/bindings/go v0.0.0-20191216232154-b5627a5c9d23
+	github.com/apple/foundationdb/bindings/go v0.0.0-20191224003115-45e24fc6a179
 	github.com/k0kubun/pp v2.3.0+incompatible // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.0 // indirect
