@@ -30,6 +30,7 @@ try:
   conn.start()
   res = conn.execute('create database if not exists test')
   conn.use('test')
+  conn.execute('drop table test')
   res = conn.execute(
       'create table if not exists test(sec int, interval int, tm timestamp, open double, high double, low double, close double, vol double, vwap double, primary key(sec, interval, tm))'
   )
