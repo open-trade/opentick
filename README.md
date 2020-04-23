@@ -1,6 +1,6 @@
 # OpenTick
 
-![OpenTrade Logo](https://github.com/opentradesolutions/opentrade/blob/master/web/img/ot.png)
+![OpenTrade Logo](https://github.com/opentradesolutions/opentrade/blob/master/imgs/ot.png)
 
 OpenTick is a fast tick database for financial timeseries data, built on [FoundationDB](https://www.foundationdb.org/) with simplified SQL layer. 
 
