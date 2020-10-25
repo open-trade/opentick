@@ -118,7 +118,7 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret adjVa
 				if vol == 0. {
 					vol = 1.
 				}
-				ret = append(ret, adjValue{tm, px, vol, px, vol})
+				ret = append(ret, adjValue{tm, px, vol, 1. / px, 1. / vol})
 			}
 		}
 		n := len(ret)
@@ -127,13 +127,9 @@ func (self *adjCacheS) get(db fdb.Transactor, dbName string, sec int) (ret adjVa
 				ret[i].Px *= ret[i+1].Px
 				ret[i].Vol *= ret[i+1].Vol
 			}
-			for i := 0; i < n; i += 1 {
-				ret[i].PxB = 1. / ret[i].PxB
-				ret[i].VolB = 1. / ret[i].VolB
-				if i > 0 {
-					ret[i].PxB *= ret[i-1].PxB
-					ret[i].VolB *= ret[i-1].VolB
-				}
+			for i := 1; i < n; i += 1 {
+				ret[i].PxB *= ret[i-1].PxB
+				ret[i].VolB *= ret[i-1].VolB
 			}
 		}
 	}
